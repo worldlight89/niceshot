@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 
 const steps = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 let currentStep = 0;
+window._currentStep = 0;
 let state = {
   club: null,
   swingCount: null,
@@ -11,6 +12,7 @@ let state = {
   clips: [],
   metricsByClip: {},
 };
+window._state = state;
 
 let stream = null;
 let pose = null;
@@ -32,7 +34,10 @@ function showStep(n) {
     if (el) el.hidden = s !== n;
   });
   currentStep = n;
+  window._currentStep = n;
 }
+// 인라인 goStep과 동기화
+window.goStep = showStep;
 
 function speak(text, lang = "ko-KR") {
   if (!window.speechSynthesis) return;

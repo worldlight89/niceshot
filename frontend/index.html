@@ -8,11 +8,28 @@
     <title>NICESHOT</title>
     <link rel="stylesheet" href="./styles.css" />
     <script>
-      window.niceshotGoNext = function() {
-        var s0 = document.getElementById('step0');
-        var s1 = document.getElementById('step1');
-        if (s0) s0.hidden = true;
-        if (s1) s1.hidden = false;
+      // 단계 전환 - 어떤 환경에서도 동작하도록 인라인으로 정의
+      window.goStep = function(n) {
+        for (var i = 0; i <= 9; i++) {
+          var el = document.getElementById('step' + i);
+          if (el) el.hidden = (i !== n);
+        }
+        if (typeof window._currentStep !== 'undefined') window._currentStep = n;
+      };
+      window.niceshotGoNext = function() { window.goStep(1); };
+      window.step1Next = function() { window.goStep(2); };
+      window.step3Next = function() {
+        var inp = document.getElementById('concernInput');
+        if (inp) inp.value = '';
+        window.goStep(4);
+      };
+      window.step4Next = function() {
+        var inp = document.getElementById('concernInput');
+        var sc = document.getElementById('summaryClub');
+        var sn = document.getElementById('summaryCount');
+        if (window._state && sc) sc.textContent = window._state.club || '-';
+        if (window._state && sn) sn.textContent = window._state.swingCount != null ? window._state.swingCount : '-';
+        window.goStep(5);
       };
     </script>
   </head>
@@ -28,14 +45,14 @@
       <!-- Step 1: 스윙 연습 시작하시겠습니까? -->
       <section id="step1" class="screen" hidden>
         <p class="screenQuestion">스윙 연습을 시작하시겠습니까?</p>
-        <button type="button" class="cta" id="btnStartYes" data-next="2">시작하기</button>
+        <button type="button" class="cta" id="btnStartYes" data-next="2" onclick="window.goStep(2)">시작하기</button>
       </section>
 
       <!-- Step 2: 몇 번 클럽? -->
       <section id="step2" class="screen" hidden>
         <p class="screenQuestion">몇 번 클럽으로 연습을 하실건가요?</p>
         <div class="clubWrap" id="clubWrap"></div>
-        <button type="button" class="cta cta--secondary" id="btnStep2Next" data-next="3" disabled>다음</button>
+        <button type="button" class="cta cta--secondary" id="btnStep2Next" data-next="3" disabled onclick="window.goStep(3)">다음</button>
       </section>
 
       <!-- Step 3: 몇 번 스윙? -->
@@ -48,7 +65,7 @@
           <button type="button" class="chip" data-value="4">4회</button>
           <button type="button" class="chip" data-value="5">5회</button>
         </div>
-        <button type="button" class="cta cta--secondary" id="btnStep3Next" data-next="4" disabled>다음</button>
+        <button type="button" class="cta cta--secondary" id="btnStep3Next" data-next="4" disabled onclick="window.goStep(4)">다음</button>
       </section>
 
       <!-- Step 4: 고민 -->
@@ -56,14 +73,14 @@
         <p class="screenQuestion">스윙 시 고민이 무엇인가요?</p>
         <textarea id="concernInput" class="inputText" placeholder="직접 입력 (선택)" rows="3"></textarea>
         <button type="button" class="cta cta--outline" id="btnSkipConcern">선택안함</button>
-        <button type="button" class="cta cta--secondary" id="btnStep4Next" data-next="5">다음</button>
+        <button type="button" class="cta cta--secondary" id="btnStep4Next" data-next="5" onclick="window.step4Next()">다음</button>
       </section>
 
       <!-- Step 5: 연습 시작 확인 -->
       <section id="step5" class="screen" hidden>
         <p class="screenQuestion">스윙 연습 시작</p>
         <p class="screenSub"><span id="summaryClub">-</span>번 클럽 · <span id="summaryCount">-</span>회 스윙</p>
-        <button type="button" class="cta" id="btnStartPractice" data-next="6">스윙 연습 시작</button>
+        <button type="button" class="cta" id="btnStartPractice" data-next="6" onclick="if(typeof startCamera==='function'){window.goStep(6);startCamera();}else{window.goStep(6);}">스윙 연습 시작</button>
       </section>
 
       <!-- Step 6: 카메라 세팅 -->
