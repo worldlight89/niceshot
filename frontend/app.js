@@ -86,8 +86,19 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ---------- Step 0: NICESHOT (탭하면 다음) ----------
-$("step0")?.addEventListener("click", () => showStep(1));
+// ---------- Step 0: NICESHOT (탭/클릭하면 다음) ----------
+function goToStep1() {
+  showStep(1);
+}
+$("step0")?.addEventListener("click", goToStep1);
+$("btnStartApp")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  goToStep1();
+});
+$("btnStartApp")?.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  goToStep1();
+});
 
 // ---------- Step 1: 시작하시겠습니까? ----------
 $("btnStartYes")?.addEventListener("click", () => showStep(2));

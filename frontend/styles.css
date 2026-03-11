@@ -84,6 +84,10 @@ body {
   cursor: pointer;
 }
 
+.cta--start {
+  margin-top: 24px;
+}
+
 /* 질문 / 문구 */
 .screenQuestion {
   font-size: 1.35rem;
