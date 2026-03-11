@@ -7,6 +7,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>NICESHOT</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      window.niceshotGoNext = function() {
+        var s0 = document.getElementById('step0');
+        var s1 = document.getElementById('step1');
+        if (s0) s0.hidden = true;
+        if (s1) s1.hidden = false;
+      };
+    </script>
   </head>
   <body>
     <div class="app">
@@ -14,7 +22,7 @@
       <section id="step0" class="screen">
         <p class="appName">NICESHOT</p>
         <p class="screenHint">화면을 눌러 시작</p>
-        <button type="button" class="cta cta--start" id="btnStartApp">시작하기</button>
+        <button type="button" class="cta cta--start" id="btnStartApp" onclick="window.niceshotGoNext && window.niceshotGoNext()">시작하기</button>
       </section>
 
       <!-- Step 1: 스윙 연습 시작하시겠습니까? -->

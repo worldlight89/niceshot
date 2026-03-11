@@ -90,13 +90,10 @@ function sleep(ms) {
 function goToStep1() {
   showStep(1);
 }
+window.niceshotGoNext = goToStep1;
 $("step0")?.addEventListener("click", goToStep1);
-$("btnStartApp")?.addEventListener("click", (e) => {
+$("btnStartApp")?.addEventListener("click", function(e) {
   e.stopPropagation();
-  goToStep1();
-});
-$("btnStartApp")?.addEventListener("touchend", (e) => {
-  e.preventDefault();
   goToStep1();
 });
 
