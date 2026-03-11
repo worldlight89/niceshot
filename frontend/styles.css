@@ -1,253 +1,261 @@
-:root {
-  --bg: #f5f6f8;
-  --card: #ffffff;
-  --text: #1a1a1a;
-  --muted: #5c5c5c;
-  --line: #e0e0e0;
-  --primary: #0d9488;
-  --primaryDark: #0f766e;
-  --accent: #0d9488;
-  --radius: 16px;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-}
-
-* {
+*, *::before, *::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html, body {
   height: 100%;
-  margin: 0;
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
-  background: var(--bg);
-  color: var(--text);
-}
-
-.app {
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-/* ----- 한 화면 = 한 스텝. 스크롤 없이 누르고 넘어가는 방식 ----- */
-.screen {
-  position: absolute;
-  inset: 0;
   width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  overflow: hidden;
+  background: #f2f5f2;
+  font-family: -apple-system, 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  color: #1a1a1a;
+}
+
+/* ─── Step (Full screen) ─────────────────────── */
+.step {
+  display: none;
+  position: fixed;
+  inset: 0;
+  flex-direction: column;
+  padding: 48px 24px 36px;
+  background: #f2f5f2;
+  overflow: hidden;
+}
+
+.step.active {
+  display: flex;
+}
+
+/* ─── Center block ───────────────────────────── */
+.center {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 28px 24px 40px;
-  text-align: center;
-  overflow: hidden;
-}
-
-.screen[hidden] {
-  display: none !important;
-}
-
-.screenFull {
-  padding: 0;
-  justify-content: flex-start;
-}
-
-.screenFull .previewWrap {
-  flex: 1;
-  width: 100%;
+  gap: 20px;
   min-height: 0;
 }
 
-/* Step 0: 앱 이름 */
-.appName {
-  font-size: 2.5rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  color: var(--primary);
-  margin: 0 0 12px;
+/* ─── Typography ─────────────────────────────── */
+.logo {
+  font-size: 3.2rem;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: #2d6a4f;
 }
 
-.screenHint {
+.hint {
   font-size: 0.95rem;
-  color: var(--muted);
-  margin: 0;
+  color: #999;
+  text-align: center;
 }
 
-#step0 {
-  cursor: pointer;
-}
-
-.cta--start {
-  margin-top: 24px;
-}
-
-/* 질문 / 문구 */
-.screenQuestion {
-  font-size: 1.35rem;
-  font-weight: 600;
+.question {
+  font-size: 1.55rem;
+  font-weight: 700;
   line-height: 1.45;
-  color: var(--text);
-  margin: 0 0 32px;
-  max-width: 320px;
+  text-align: center;
+  color: #111;
 }
 
-.screenQuestionOverlay {
-  position: absolute;
-  left: 24px;
-  top: 24px;
-  z-index: 2;
-  color: #fff;
-  text-shadow: 0 1px 8px rgba(0,0,0,0.4);
-  margin: 0;
-}
-
-.screenSub {
-  font-size: 1rem;
-  color: var(--muted);
-  margin: 0 0 28px;
-}
-
-.screenSubBottom {
-  position: absolute;
-  bottom: 28px;
-  left: 24px;
-  right: 24px;
-  margin: 0;
-  color: rgba(255,255,255,0.95);
-  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-
-/* CTA 버튼 */
-.cta {
-  width: 100%;
-  max-width: 320px;
-  padding: 18px 24px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  border: none;
-  border-radius: var(--radius);
-  background: var(--primary);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-}
-
-.cta:active {
-  background: var(--primaryDark);
-}
-
-.cta:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cta--secondary {
-  margin-top: 12px;
-  background: var(--card);
-  color: var(--text);
-  border: 2px solid var(--line);
-}
-
-.cta--outline {
-  background: transparent;
-  color: var(--muted);
-  border: 2px solid var(--line);
+.question-top {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+  color: #111;
+  padding-top: 8px;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
-/* 클럽 선택 */
-.clubWrap {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+/* ─── Buttons ────────────────────────────────── */
+.btn {
+  display: block;
   width: 100%;
-  max-width: 320px;
-  margin-bottom: 28px;
-}
-
-.clubBtn {
-  padding: 16px 12px;
-  font-size: 1rem;
+  padding: 18px;
+  border: none;
+  border-radius: 16px;
+  font-size: 1.05rem;
   font-weight: 600;
-  border-radius: 12px;
-  border: 2px solid var(--line);
-  background: var(--card);
-  color: var(--text);
   cursor: pointer;
+  transition: transform 0.1s, opacity 0.1s;
+  flex-shrink: 0;
 }
 
-.clubBtn.selected {
-  border-color: var(--primary);
-  background: rgba(13, 148, 136, 0.1);
-  color: var(--primary);
+.btn + .btn {
+  margin-top: 10px;
 }
 
-/* 1~5 선택 */
-.optionWrap {
+.btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+.btn-primary {
+  background: #2d6a4f;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 2px solid #bbb;
+  color: #666;
+}
+
+/* ─── Club grid ──────────────────────────────── */
+.club-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 0 12px;
+  min-height: 0;
+}
+
+.club-btn {
+  padding: 18px 8px;
+  border: 2px solid #ddd;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #333;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.club-btn:active {
+  transform: scale(0.95);
+}
+
+.club-btn.selected {
+  background: #2d6a4f;
+  border-color: #2d6a4f;
+  color: #fff;
+}
+
+/* ─── Chip row (swing count) ─────────────────── */
+.chip-row {
   display: flex;
+  gap: 10px;
   flex-wrap: wrap;
-  gap: 12px;
   justify-content: center;
-  margin-bottom: 28px;
 }
 
 .chip {
-  padding: 16px 24px;
-  font-size: 1.05rem;
+  padding: 16px 22px;
+  border: 2px solid #ddd;
+  border-radius: 50px;
+  background: #fff;
+  font-size: 1rem;
   font-weight: 600;
-  border-radius: 12px;
-  border: 2px solid var(--line);
-  background: var(--card);
-  color: var(--text);
   cursor: pointer;
+  color: #333;
+  transition: all 0.15s;
+}
+
+.chip:active {
+  transform: scale(0.95);
 }
 
 .chip.selected {
-  border-color: var(--primary);
-  background: rgba(13, 148, 136, 0.1);
-  color: var(--primary);
+  background: #2d6a4f;
+  border-color: #2d6a4f;
+  color: #fff;
 }
 
-/* 고민 입력 */
-.inputText {
+/* ─── Textarea ───────────────────────────────── */
+.textarea {
   width: 100%;
-  max-width: 320px;
-  margin-bottom: 12px;
-  padding: 16px;
+  padding: 14px 16px;
+  border: 2px solid #ddd;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  resize: none;
+  background: #fff;
+  color: #333;
+  font-family: inherit;
+  height: 110px;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #2d6a4f;
+}
+
+/* ─── Summary box ────────────────────────────── */
+.summary-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px 24px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary-row {
   font-size: 1rem;
-  border-radius: 12px;
-  border: 2px solid var(--line);
-  background: var(--card);
-  color: var(--text);
-  resize: vertical;
+  color: #555;
 }
 
-.inputText::placeholder {
-  color: var(--muted);
+.summary-row strong {
+  color: #2d6a4f;
+  font-weight: 700;
 }
 
-/* 카메라 / 녹화 */
-.previewWrap {
-  position: relative;
-  width: 100%;
+.concern-text {
+  color: #777;
+  font-size: 0.9rem;
+}
+
+.icon-big {
+  font-size: 3.5rem;
+  line-height: 1;
+}
+
+/* ─── Camera steps ───────────────────────────── */
+.step-camera {
+  padding: 0;
   background: #000;
 }
 
-.previewWrap video {
+.video-wrap {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.video-wrap video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
 
-.overlay {
+.video-wrap canvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -255,103 +263,123 @@ body {
   pointer-events: none;
 }
 
-.framingPill {
+/* 가이드 프레임 */
+.frame-guide {
   position: absolute;
-  left: 16px;
-  top: 16px;
-  padding: 10px 14px;
+  inset: 6% 10%;
+  border: 2px dashed rgba(255,255,255,0.3);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.pill {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  padding: 9px 22px;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.camera-bar {
+  padding: 12px 20px 28px;
+  text-align: center;
+  color: #fff;
   font-size: 0.9rem;
-  font-weight: 500;
-  color: #fff;
   background: rgba(0,0,0,0.5);
-  border-radius: 10px;
-  margin: 0;
+  flex-shrink: 0;
 }
 
-.recordOverlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 24px 20px 40px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.8));
-  color: #fff;
-  text-align: center;
-}
-
-.recordPhaseText {
-  font-size: 1.2rem;
-  margin: 0 0 8px;
-}
-
-.recordCountdown {
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin: 0;
-}
-
-/* 결과 (step 9: 이 영역만 스크롤, 페이지는 고정) */
-.results {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 400px;
-  margin-bottom: 16px;
-  text-align: left;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.resultCard {
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: 18px;
-  margin-bottom: 14px;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--line);
-}
-
-.resultCard h3 {
-  font-size: 1rem;
-  margin: 0 0 12px;
-  color: var(--primary);
-}
-
-.resultCard .k { color: var(--muted); font-size: 0.85rem; margin-top: 10px; }
-.resultCard .k:first-of-type { margin-top: 0; }
-.resultCard .v { font-size: 0.95rem; line-height: 1.55; margin-bottom: 8px; }
-.resultCard .v ul { margin: 4px 0 0; padding-left: 20px; }
-
-.resultCard--empty,
-.resultCard--error {
-  text-align: center;
-}
-
-.resultEmptyTitle {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 10px;
-}
-
-.resultEmptyText {
-  font-size: 0.95rem;
-  color: var(--muted);
-  line-height: 1.5;
-  margin: 0 0 8px;
-}
-
-.resultCard--error .resultEmptyTitle {
-  color: #b91c1c;
-}
-
-#step7 .previewWrap {
+/* ─── Record overlay ─────────────────────────── */
+.record-overlay {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  gap: 8px;
 }
 
-#step7 .previewWrap video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.record-phase {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+}
+
+.record-countdown {
+  font-size: 6rem;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+  line-height: 1;
+}
+
+/* ─── Results ────────────────────────────────── */
+.step-results {
+  padding-bottom: 20px;
+}
+
+.results-wrap {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 0 16px;
+  min-height: 0;
+}
+
+.result-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  flex-shrink: 0;
+}
+
+.result-card h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #2d6a4f;
+  margin-bottom: 10px;
+}
+
+.result-card p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #444;
+  white-space: pre-wrap;
+}
+
+/* ─── Loading spinner ────────────────────────── */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid #ddd;
+  border-top-color: #2d6a4f;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

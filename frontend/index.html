@@ -1,129 +1,120 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <title>NICESHOT</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script>
-      // 단계 전환 - 어떤 환경에서도 동작하도록 인라인으로 정의
-      window.goStep = function(n) {
-        for (var i = 0; i <= 9; i++) {
-          var el = document.getElementById('step' + i);
-          if (el) el.hidden = (i !== n);
-        }
-        if (typeof window._currentStep !== 'undefined') window._currentStep = n;
-      };
-      window.niceshotGoNext = function() { window.goStep(1); };
-      window.step1Next = function() { window.goStep(2); };
-      window.step3Next = function() {
-        var inp = document.getElementById('concernInput');
-        if (inp) inp.value = '';
-        window.goStep(4);
-      };
-      window.step4Next = function() {
-        var inp = document.getElementById('concernInput');
-        var sc = document.getElementById('summaryClub');
-        var sn = document.getElementById('summaryCount');
-        if (window._state && sc) sc.textContent = window._state.club || '-';
-        if (window._state && sn) sn.textContent = window._state.swingCount != null ? window._state.swingCount : '-';
-        window.goStep(5);
-      };
-    </script>
-  </head>
-  <body>
-    <div class="app">
-      <!-- Step 0: 앱 이름 -->
-      <section id="step0" class="screen">
-        <p class="appName">NICESHOT</p>
-        <p class="screenHint">화면을 눌러 시작</p>
-        <button type="button" class="cta cta--start" id="btnStartApp" onclick="window.niceshotGoNext && window.niceshotGoNext()">시작하기</button>
-      </section>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>NICESHOT</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
-      <!-- Step 1: 스윙 연습 시작하시겠습니까? -->
-      <section id="step1" class="screen" hidden>
-        <p class="screenQuestion">스윙 연습을 시작하시겠습니까?</p>
-        <button type="button" class="cta" id="btnStartYes" data-next="2" onclick="window.goStep(2)">시작하기</button>
-      </section>
-
-      <!-- Step 2: 몇 번 클럽? -->
-      <section id="step2" class="screen" hidden>
-        <p class="screenQuestion">몇 번 클럽으로 연습을 하실건가요?</p>
-        <div class="clubWrap" id="clubWrap"></div>
-        <button type="button" class="cta cta--secondary" id="btnStep2Next" data-next="3" disabled onclick="window.goStep(3)">다음</button>
-      </section>
-
-      <!-- Step 3: 몇 번 스윙? -->
-      <section id="step3" class="screen" hidden>
-        <p class="screenQuestion">몇 번의 스윙을 하실건가요?</p>
-        <div class="optionWrap">
-          <button type="button" class="chip" data-value="1">1회</button>
-          <button type="button" class="chip" data-value="2">2회</button>
-          <button type="button" class="chip" data-value="3">3회</button>
-          <button type="button" class="chip" data-value="4">4회</button>
-          <button type="button" class="chip" data-value="5">5회</button>
-        </div>
-        <button type="button" class="cta cta--secondary" id="btnStep3Next" data-next="4" disabled onclick="window.goStep(4)">다음</button>
-      </section>
-
-      <!-- Step 4: 고민 -->
-      <section id="step4" class="screen" hidden>
-        <p class="screenQuestion">스윙 시 고민이 무엇인가요?</p>
-        <textarea id="concernInput" class="inputText" placeholder="직접 입력 (선택)" rows="3"></textarea>
-        <button type="button" class="cta cta--outline" id="btnSkipConcern">선택안함</button>
-        <button type="button" class="cta cta--secondary" id="btnStep4Next" data-next="5" onclick="window.step4Next()">다음</button>
-      </section>
-
-      <!-- Step 5: 연습 시작 확인 -->
-      <section id="step5" class="screen" hidden>
-        <p class="screenQuestion">스윙 연습 시작</p>
-        <p class="screenSub"><span id="summaryClub">-</span>번 클럽 · <span id="summaryCount">-</span>회 스윙</p>
-        <button type="button" class="cta" id="btnStartPractice" data-next="6" onclick="if(typeof startCamera==='function'){window.goStep(6);startCamera();}else{window.goStep(6);}">스윙 연습 시작</button>
-      </section>
-
-      <!-- Step 6: 카메라 세팅 -->
-      <section id="step6" class="screen screenFull" hidden>
-        <p class="screenQuestion screenQuestionOverlay">카메라를 세팅하세요</p>
-        <div class="previewWrap">
-          <video id="preview" playsinline autoplay muted></video>
-          <canvas id="overlay" class="overlay"></canvas>
-          <p id="framingPill" class="framingPill">프레임에 전신이 들어오게 서주세요</p>
-        </div>
-        <p class="screenSub screenSubBottom" id="step6Status">위치를 맞추면 알림이 울립니다</p>
-      </section>
-
-      <!-- Step 7: 녹화 -->
-      <section id="step7" class="screen screenFull" hidden>
-        <div class="previewWrap">
-          <video id="previewRecord" playsinline autoplay muted></video>
-        </div>
-        <div class="recordOverlay">
-          <p id="recordPhaseText" class="recordPhaseText">준비 중</p>
-          <p id="recordCountdown" class="recordCountdown"></p>
-        </div>
-      </section>
-
-      <!-- Step 8: 분석 요청 -->
-      <section id="step8" class="screen" hidden>
-        <p class="screenQuestion">녹화 완료</p>
-        <p class="screenSub"><span id="clipCount">0</span>개 클립 저장됨</p>
-        <button type="button" class="cta" id="btnAnalyze">분석 및 피드백 받기</button>
-      </section>
-
-      <!-- Step 9: 결과 -->
-      <section id="step9" class="screen" hidden>
-        <p class="screenQuestion">분석 결과</p>
-        <div id="results" class="results"></div>
-        <button type="button" class="cta cta--secondary" id="btnAgain">처음부터 다시하기</button>
-      </section>
+  <!-- Step 0: 스플래시 -->
+  <div id="step0" class="step active">
+    <div class="center">
+      <h1 class="logo">NICESHOT</h1>
+      <p class="hint">골프 스윙 AI 코치</p>
     </div>
+    <button class="btn btn-primary" onclick="goStep(1)">시작하기</button>
+  </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="./config.js"></script>
-    <script src="./app.js"></script>
-  </body>
+  <!-- Step 1: 시작 확인 -->
+  <div id="step1" class="step">
+    <div class="center">
+      <h2 class="question">스윙 연습을<br>시작하시겠습니까?</h2>
+    </div>
+    <button class="btn btn-primary" onclick="goStep(2)">시작하기</button>
+  </div>
+
+  <!-- Step 2: 클럽 선택 -->
+  <div id="step2" class="step">
+    <h2 class="question-top">몇 번 클럽으로<br>연습하실 건가요?</h2>
+    <div class="club-grid" id="clubGrid"></div>
+    <button class="btn btn-primary" id="btnClubNext" onclick="goStep(3)" disabled>다음</button>
+  </div>
+
+  <!-- Step 3: 스윙 횟수 -->
+  <div id="step3" class="step">
+    <div class="center">
+      <h2 class="question">몇 번 스윙을<br>하실 건가요?</h2>
+      <div class="chip-row">
+        <button class="chip" onclick="selectCount(1,this)">1회</button>
+        <button class="chip" onclick="selectCount(2,this)">2회</button>
+        <button class="chip" onclick="selectCount(3,this)">3회</button>
+        <button class="chip" onclick="selectCount(4,this)">4회</button>
+        <button class="chip" onclick="selectCount(5,this)">5회</button>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btnCountNext" onclick="goStep(4)" disabled>다음</button>
+  </div>
+
+  <!-- Step 4: 고민 입력 -->
+  <div id="step4" class="step">
+    <div class="center">
+      <h2 class="question">스윙 시 고민이<br>무엇인가요?</h2>
+      <textarea id="concernInput" class="textarea" placeholder="예: 슬라이스가 심해요, 어드레스가 불안정해요..."></textarea>
+    </div>
+    <button class="btn btn-outline" onclick="skipConcern()">선택 안함</button>
+    <button class="btn btn-primary" onclick="confirmConcern()">다음</button>
+  </div>
+
+  <!-- Step 5: 요약 및 시작 -->
+  <div id="step5" class="step">
+    <div class="center">
+      <h2 class="question">연습 준비 완료</h2>
+      <div class="summary-box">
+        <p class="summary-row">클럽: <strong id="summaryClub">-</strong></p>
+        <p class="summary-row">스윙 횟수: <strong id="summaryCount">-</strong>회</p>
+        <p class="summary-row" id="concernRow" style="display:none">고민: <span id="summaryConern" class="concern-text"></span></p>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="startPractice()">📹 연습 시작</button>
+  </div>
+
+  <!-- Step 6: 카메라 세팅 -->
+  <div id="step6" class="step step-camera">
+    <div class="video-wrap">
+      <video id="previewVideo" autoplay playsinline muted></video>
+      <canvas id="poseOverlay"></canvas>
+      <div class="frame-guide"></div>
+      <div class="pill" id="framePill">전신이 프레임 안에 들어오게 서주세요</div>
+    </div>
+    <div class="camera-bar">
+      <p id="cameraStatus">카메라 켜는 중...</p>
+    </div>
+  </div>
+
+  <!-- Step 7: 녹화 -->
+  <div id="step7" class="step step-camera">
+    <div class="video-wrap">
+      <video id="recordVideo" autoplay playsinline muted></video>
+      <div class="record-overlay">
+        <p id="recordPhase" class="record-phase">준비 중</p>
+        <p id="recordCountdown" class="record-countdown"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 8: 녹화 완료 -->
+  <div id="step8" class="step">
+    <div class="center">
+      <div class="icon-big">✅</div>
+      <h2 class="question">녹화 완료!</h2>
+      <p class="hint"><span id="clipCount">0</span>개 클립이 저장됐습니다</p>
+    </div>
+    <button class="btn btn-primary" onclick="uploadAndAnalyze()">🤖 AI 코칭 받기</button>
+  </div>
+
+  <!-- Step 9: 결과 -->
+  <div id="step9" class="step step-results">
+    <h2 class="question-top">AI 코칭 결과</h2>
+    <div id="resultsWrap" class="results-wrap"></div>
+    <button class="btn btn-secondary" onclick="resetAll()">처음부터 다시하기</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
 </html>

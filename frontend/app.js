@@ -1,486 +1,496 @@
-const BACKEND_BASE = (typeof window !== "undefined" && window.NICESHOT_API_URL) || "http://localhost:8002";
+/* ================================================================
+   NICESHOT – 골프 스윙 AI 코치
+   전체 흐름: 클럽선택 → 횟수 → 고민입력 → 카메라세팅 → 녹화 → AI분석
+   ================================================================ */
 
-const $ = (id) => document.getElementById(id);
+var BACKEND = (typeof window.NICESHOT_API_URL === 'string' && window.NICESHOT_API_URL)
+  ? window.NICESHOT_API_URL
+  : 'http://localhost:8002';
 
-const steps = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-let currentStep = 0;
-window._currentStep = 0;
-let state = {
+var CLUBS = [
+  '드라이버', '3W', '5W',
+  '4I', '5I', '6I',
+  '7I', '8I', '9I',
+  'PW', 'SW', 'PT'
+];
+
+/* ── State ── */
+var state = {
   club: null,
   swingCount: null,
-  concern: "",
-  clips: [],
-  metricsByClip: {},
+  concern: '',
+  clips: []
 };
-window._state = state;
 
-let stream = null;
-let pose = null;
-let poseLoopRunning = false;
-let lastPoseSentAt = 0;
-let okStreak = 0;
-let setupPerfectPlayed = false;
+var mediaStream = null;
+var currentSwingIndex = 0;
 
-const CLUBS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "PW", "드라이버"];
-
-const preview = $("preview");
-const overlay = $("overlay");
-const framingPill = $("framingPill");
-const step6Status = $("step6Status");
-
-function showStep(n) {
-  steps.forEach((s) => {
-    const el = document.getElementById(`step${s}`);
-    if (el) el.hidden = s !== n;
+/* ================================================================
+   단계 전환
+   ================================================================ */
+function goStep(n) {
+  document.querySelectorAll('.step').forEach(function (el) {
+    el.classList.remove('active');
   });
-  currentStep = n;
-  window._currentStep = n;
+  var el = document.getElementById('step' + n);
+  if (el) el.classList.add('active');
 }
-// 인라인 goStep과 동기화
-window.goStep = showStep;
 
-function speak(text, lang = "ko-KR") {
+/* ================================================================
+   Step 2 – 클럽 선택
+   ================================================================ */
+function buildClubGrid() {
+  var grid = document.getElementById('clubGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  CLUBS.forEach(function (club) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'club-btn';
+    btn.textContent = club;
+    btn.onclick = function () {
+      document.querySelectorAll('.club-btn').forEach(function (b) {
+        b.classList.remove('selected');
+      });
+      btn.classList.add('selected');
+      state.club = club;
+      var next = document.getElementById('btnClubNext');
+      if (next) next.disabled = false;
+    };
+    grid.appendChild(btn);
+  });
+}
+
+/* ================================================================
+   Step 3 – 스윙 횟수 선택
+   ================================================================ */
+function selectCount(n, btn) {
+  document.querySelectorAll('.chip').forEach(function (b) {
+    b.classList.remove('selected');
+  });
+  btn.classList.add('selected');
+  state.swingCount = n;
+  var next = document.getElementById('btnCountNext');
+  if (next) next.disabled = false;
+}
+
+/* ================================================================
+   Step 4 – 고민 입력
+   ================================================================ */
+function skipConcern() {
+  var inp = document.getElementById('concernInput');
+  if (inp) inp.value = '';
+  state.concern = '';
+}
+
+function confirmConcern() {
+  var inp = document.getElementById('concernInput');
+  state.concern = inp ? inp.value.trim() : '';
+
+  // Step 5 요약 업데이트
+  var sc = document.getElementById('summaryClub');
+  var sn = document.getElementById('summaryCount');
+  var sp = document.getElementById('summaryConern');
+  var cr = document.getElementById('concernRow');
+  if (sc) sc.textContent = state.club || '-';
+  if (sn) sn.textContent = state.swingCount || '-';
+  if (sp) sp.textContent = state.concern;
+  if (cr) cr.style.display = state.concern ? '' : 'none';
+
+  goStep(5);
+}
+
+/* ================================================================
+   Step 6 – 카메라 세팅 + Pose 감지
+   ================================================================ */
+var poseDetector = null;
+var poseRunning = false;
+var okFrames = 0;
+var poseDone = false;
+
+function startPractice() {
+  state.clips = [];
+  currentSwingIndex = 0;
+  poseRunning = false;
+  okFrames = 0;
+  poseDone = false;
+  goStep(6);
+  openCamera();
+}
+
+function openCamera() {
+  var status = document.getElementById('cameraStatus');
+  if (status) status.textContent = '카메라 켜는 중...';
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false
+  }).then(function (stream) {
+    mediaStream = stream;
+    var vid = document.getElementById('previewVideo');
+    if (vid) { vid.srcObject = stream; vid.play(); }
+    if (status) status.textContent = '전신이 프레임 안에 들어오게 서주세요';
+    setTimeout(initPose, 800);
+  }).catch(function (err) {
+    if (status) status.textContent = '카메라 오류: ' + err.message + ' — 브라우저에서 카메라 권한을 허용해주세요.';
+  });
+}
+
+function initPose() {
+  if (typeof Pose === 'undefined') {
+    // MediaPipe 없으면 바로 3초 후 녹화 시작
+    var pill = document.getElementById('framePill');
+    if (pill) pill.textContent = '3초 후 녹화를 시작합니다';
+    setTimeout(function () { runSwingLoop(); }, 3000);
+    return;
+  }
+
+  if (!poseDetector) {
+    poseDetector = new Pose({
+      locateFile: function (f) {
+        return 'https://cdn.jsdelivr.net/npm/@mediapipe/pose/' + f;
+      }
+    });
+    poseDetector.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55
+    });
+    poseDetector.onResults(onPoseResult);
+  }
+
+  poseRunning = true;
+  okFrames = 0;
+  poseDone = false;
+  requestAnimationFrame(poseLoop);
+}
+
+function poseLoop() {
+  if (!poseRunning) return;
+  var vid = document.getElementById('previewVideo');
+  if (vid && vid.readyState >= 2) {
+    poseDetector.send({ image: vid }).catch(function () {});
+  }
+  setTimeout(function () { requestAnimationFrame(poseLoop); }, 120);
+}
+
+function onPoseResult(results) {
+  if (poseDone) return;
+
+  var pill = document.getElementById('framePill');
+  var lms = results.poseLandmarks;
+
+  if (!lms || lms.length === 0) {
+    okFrames = 0;
+    if (pill) pill.textContent = '전신이 프레임 안에 들어오게 서주세요';
+    return;
+  }
+
+  var xs = lms.map(function (l) { return l.x; });
+  var ys = lms.map(function (l) { return l.y; });
+  var minX = Math.min.apply(null, xs);
+  var maxX = Math.max.apply(null, xs);
+  var minY = Math.min.apply(null, ys);
+  var maxY = Math.max.apply(null, ys);
+
+  var inFrame = minX > 0.04 && maxX < 0.96 && minY > 0.02 && maxY < 0.97;
+
+  if (inFrame) {
+    okFrames++;
+    if (pill) pill.textContent = '좋아요! 자세 유지... (' + okFrames + '/8)';
+    if (okFrames >= 8) {
+      poseDone = true;
+      poseRunning = false;
+      if (pill) pill.textContent = '✅ 세팅 완벽!';
+      playBeepOk();
+      speak('세팅 완벽합니다. 5초 후 스윙 연습을 시작합니다.');
+      var status = document.getElementById('cameraStatus');
+      if (status) status.textContent = '5초 후 스윙 연습을 시작합니다';
+      setTimeout(function () { runSwingLoop(); }, 5000);
+    }
+  } else {
+    okFrames = 0;
+    if (pill) pill.textContent = '전신이 프레임 안에 들어오게 서주세요';
+  }
+}
+
+/* ================================================================
+   Step 7 – 녹화 루프
+   ================================================================ */
+function runSwingLoop() {
+  if (currentSwingIndex >= state.swingCount) {
+    finishRecording();
+    return;
+  }
+  goStep(7);
+
+  var recVid = document.getElementById('recordVideo');
+  if (recVid && mediaStream) {
+    recVid.srcObject = mediaStream;
+    recVid.play();
+  }
+
+  recordOneSwing(currentSwingIndex).then(function (blob) {
+    state.clips.push(blob);
+    currentSwingIndex++;
+    if (currentSwingIndex < state.swingCount) {
+      speak((currentSwingIndex + 1) + '번째 스윙을 준비하세요');
+      setTimeout(function () { runSwingLoop(); }, 2500);
+    } else {
+      finishRecording();
+    }
+  });
+}
+
+function recordOneSwing(index) {
+  return new Promise(function (resolve) {
+    var phase = document.getElementById('recordPhase');
+    var countdown = document.getElementById('recordCountdown');
+
+    if (phase) phase.textContent = (index + 1) + '번째 스윙 준비';
+    if (countdown) countdown.textContent = '';
+
+    // 5초 카운트다운
+    var count = 5;
+    var timer = setInterval(function () {
+      playBeep();
+      if (countdown) countdown.textContent = count;
+      count--;
+      if (count < 0) {
+        clearInterval(timer);
+        if (countdown) countdown.textContent = '';
+        startCapture();
+      }
+    }, 1000);
+
+    function startCapture() {
+      if (phase) phase.textContent = '🏌️ 스윙!';
+      playBeepLong();
+
+      var chunks = [];
+      var mimeType = pickMimeType();
+      var recorder;
+      try {
+        recorder = new MediaRecorder(mediaStream, mimeType ? { mimeType: mimeType } : {});
+      } catch (e) {
+        recorder = new MediaRecorder(mediaStream);
+      }
+
+      recorder.ondataavailable = function (e) {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.start(200);
+
+      setTimeout(function () {
+        recorder.stop();
+      }, 8000);
+
+      recorder.onstop = function () {
+        var blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+        if (phase) phase.textContent = '✅ 완료!';
+        resolve(blob);
+      };
+    }
+  });
+}
+
+function pickMimeType() {
+  var types = ['video/mp4;codecs=h264', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  for (var i = 0; i < types.length; i++) {
+    try { if (MediaRecorder.isTypeSupported(types[i])) return types[i]; } catch (e) {}
+  }
+  return '';
+}
+
+/* ================================================================
+   Step 8 – 녹화 완료
+   ================================================================ */
+function finishRecording() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(function (t) { t.stop(); });
+  }
+  goStep(8);
+  var cc = document.getElementById('clipCount');
+  if (cc) cc.textContent = state.clips.length;
+}
+
+/* ================================================================
+   Step 9 – AI 분석
+   ================================================================ */
+function uploadAndAnalyze() {
+  goStep(9);
+  var wrap = document.getElementById('resultsWrap');
+  if (wrap) {
+    wrap.innerHTML = '<div class="loading"><div class="spinner"></div><p>AI가 스윙을 분석 중입니다...<br>잠시만 기다려주세요</p></div>';
+  }
+
+  var form = new FormData();
+  state.clips.forEach(function (clip, i) {
+    var ext = clip.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    form.append('clips', clip, 'swing_' + (i + 1) + '.' + ext);
+  });
+
+  var metrics = state.clips.map(function (_, i) {
+    return { index: i + 1, club: state.club };
+  });
+  form.append('metrics_json', JSON.stringify(metrics));
+  form.append('notes', state.concern || '');
+  form.append('club', state.club || '');
+
+  fetch(BACKEND + '/api/analyze', { method: 'POST', body: form })
+    .then(function (res) {
+      if (!res.ok) throw new Error('서버 응답 오류 (' + res.status + ')');
+      return res.json();
+    })
+    .then(function (data) {
+      showResults(data);
+    })
+    .catch(function (err) {
+      if (wrap) {
+        wrap.innerHTML =
+          '<div class="result-card">' +
+          '<h3>⚠️ 오류 발생</h3>' +
+          '<p>' + err.message + '</p>' +
+          '<p style="margin-top:10px;color:#aaa;font-size:.8rem">' +
+          '백엔드 서버가 실행 중인지 확인해주세요.<br>' +
+          '서버 주소: ' + BACKEND + '</p>' +
+          '</div>';
+      }
+    });
+}
+
+function showResults(data) {
+  var wrap = document.getElementById('resultsWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  var items = Array.isArray(data.results) ? data.results
+    : Array.isArray(data) ? data
+    : [data];
+
+  if (items.length === 0) {
+    wrap.innerHTML = '<div class="result-card"><h3>결과 없음</h3><p>분석 결과가 없습니다.</p></div>';
+    return;
+  }
+
+  items.forEach(function (item, i) {
+    var card = document.createElement('div');
+    card.className = 'result-card';
+    var coaching = item.coaching || item.message || item.feedback || JSON.stringify(item, null, 2);
+    card.innerHTML =
+      '<h3>스윙 ' + (i + 1) + ' — ' + (state.club || '') + ' 분석</h3>' +
+      '<p>' + coaching + '</p>';
+    wrap.appendChild(card);
+  });
+}
+
+/* ================================================================
+   리셋
+   ================================================================ */
+function resetAll() {
+  state.club = null;
+  state.swingCount = null;
+  state.concern = '';
+  state.clips = [];
+  currentSwingIndex = 0;
+  poseRunning = false;
+  okFrames = 0;
+  poseDone = false;
+
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(function (t) { t.stop(); });
+    mediaStream = null;
+  }
+
+  // UI 초기화
+  document.querySelectorAll('.club-btn').forEach(function (b) { b.classList.remove('selected'); });
+  document.querySelectorAll('.chip').forEach(function (b) { b.classList.remove('selected'); });
+  var clubNext = document.getElementById('btnClubNext');
+  if (clubNext) clubNext.disabled = true;
+  var countNext = document.getElementById('btnCountNext');
+  if (countNext) countNext.disabled = true;
+  var inp = document.getElementById('concernInput');
+  if (inp) inp.value = '';
+
+  goStep(0);
+}
+
+/* ================================================================
+   오디오 / TTS
+   ================================================================ */
+function playBeep() {
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    var ctx = new Ctx();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 660;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.2);
+    osc.onended = function () { ctx.close(); };
+  } catch (e) {}
+}
+
+function playBeepOk() {
+  // C - E - G 화음
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    var ctx = new Ctx();
+    [523, 659, 784].forEach(function (freq, i) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      var t = ctx.currentTime + i * 0.14;
+      gain.gain.setValueAtTime(0.25, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      osc.start(t);
+      osc.stop(t + 0.32);
+    });
+    setTimeout(function () { ctx.close(); }, 1200);
+  } catch (e) {}
+}
+
+function playBeepLong() {
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    var ctx = new Ctx();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.55);
+    osc.onended = function () { ctx.close(); };
+  } catch (e) {}
+}
+
+function speak(text) {
   if (!window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
+  var u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ko-KR';
   u.rate = 0.95;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
 }
 
-function beep() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.0001;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const t = ctx.currentTime;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-    osc.start(t);
-    osc.stop(t + 0.3);
-    osc.onended = () => ctx.close();
-  } catch (_) {}
-}
-
-function beepSetupPerfect() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 523;
-    gain.gain.value = 0.0001;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const t = ctx.currentTime;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.2, t + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-    osc.start(t);
-    osc.stop(t + 0.45);
-    osc.onended = () => ctx.close();
-  } catch (_) {}
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ---------- Step 0: NICESHOT ----------
-function goToStep1() {
-  showStep(1);
-}
-window.niceshotGoNext = goToStep1;
-
-// ---------- 한 곳에서 모든 버튼 처리 ----------
-function handleButtonAction(btn) {
-  var next = btn.getAttribute("data-next");
-  if (next !== null) {
-    var n = parseInt(next, 10);
-    if (btn.id === "btnStep4Next") {
-      state.concern = ($("concernInput") && $("concernInput").value ? $("concernInput").value.trim() : "");
-      if ($("summaryClub")) $("summaryClub").textContent = state.club || "-";
-      if ($("summaryCount")) $("summaryCount").textContent = state.swingCount ?? "-";
-    }
-    if (btn.id === "btnStartPractice") {
-      showStep(6);
-      var s6s = document.getElementById("step6Status");
-      if (s6s) s6s.textContent = "카메라를 켜는 중...";
-      setupPerfectPlayed = false;
-      okStreak = 0;
-      startCamera().then(function () {
-        var s6s2 = document.getElementById("step6Status");
-        if (s6s2) s6s2.textContent = "위치를 맞추면 알림이 울립니다";
-      });
-      return;
-    }
-    showStep(n);
-    return;
-  }
-
-  if (btn.id === "btnSkipConcern") {
-    if ($("concernInput")) $("concernInput").value = "";
-    state.concern = "";
-    return;
-  }
-  if (btn.id === "btnAnalyze") {
-    uploadAndShowResults();
-    return;
-  }
-  if (btn.id === "btnAgain") {
-    resetFlow();
-    return;
-  }
-
-  if (btn.classList.contains("clubBtn")) {
-    var wrap = $("clubWrap");
-    if (wrap) {
-      wrap.querySelectorAll(".clubBtn").forEach(function (b) { b.classList.remove("selected"); });
-      btn.classList.add("selected");
-      state.club = btn.textContent;
-      var n2 = $("btnStep2Next");
-      if (n2) n2.disabled = false;
-    }
-    return;
-  }
-  if (btn.classList.contains("chip") && btn.closest("#step3")) {
-    document.querySelectorAll("#step3 .chip").forEach(function (b) { b.classList.remove("selected"); });
-    btn.classList.add("selected");
-    state.swingCount = parseInt(btn.getAttribute("data-value"), 10);
-    var n3 = $("btnStep3Next");
-    if (n3) n3.disabled = false;
-    return;
-  }
-}
-
-var _lastTouchTarget = null;
-document.querySelector(".app").addEventListener("touchend", function (e) {
-  var btn = e.target.closest("button");
-  if (!btn) return;
-  e.preventDefault(); // ghost click 방지
-  _lastTouchTarget = btn;
-  handleButtonAction(btn);
-}, { passive: false });
-
-document.querySelector(".app").addEventListener("click", function (e) {
-  var btn = e.target.closest("button");
-  if (!btn) return;
-  if (btn === _lastTouchTarget) { _lastTouchTarget = null; return; } // 터치 후 중복 click 무시
-  handleButtonAction(btn);
-});
-
-function initClubStep() {
-  var wrap = $("clubWrap");
-  if (!wrap) return;
-  wrap.innerHTML = "";
-  CLUBS.forEach(function (c) {
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "clubBtn";
-    btn.textContent = c;
-    wrap.appendChild(btn);
-  });
-}
-
-function clearStep2() {
-  state.club = null;
-  state.swingCount = null;
-  var wrap = $("clubWrap");
-  if (wrap) wrap.querySelectorAll(".clubBtn").forEach(function (b) { b.classList.remove("selected"); });
-  var n2 = $("btnStep2Next");
-  if (n2) n2.disabled = true;
-  document.querySelectorAll("#step3 .chip").forEach(function (b) { b.classList.remove("selected"); });
-  var n3 = $("btnStep3Next");
-  if (n3) n3.disabled = true;
-}
-
-async function startCamera() {
-  if (stream) return stream;
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false,
-  });
-  preview.srcObject = stream;
-  await preview.play();
-  startPoseGuideIfPossible();
-  return stream;
-}
-
-function stopCamera() {
-  if (!stream) return;
-  stream.getTracks().forEach((t) => t.stop());
-  stream = null;
-  preview.srcObject = null;
-  stopPoseGuide();
-}
-
-function ensureOverlaySize() {
-  if (!preview || !overlay) return;
-  const w = preview.videoWidth || 1280;
-  const h = preview.videoHeight || 720;
-  if (overlay.width !== w) overlay.width = w;
-  if (overlay.height !== h) overlay.height = h;
-}
-
-function drawGuide(bbox, ok) {
-  if (!overlay) return;
-  ensureOverlaySize();
-  const ctx = overlay.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, overlay.width, overlay.height);
-  const padX = overlay.width * 0.08;
-  const padY = overlay.height * 0.07;
-  ctx.strokeStyle = "rgba(255,255,255,0.4)";
-  ctx.lineWidth = 3;
-  ctx.setLineDash([10, 10]);
-  ctx.strokeRect(padX, padY, overlay.width - padX * 2, overlay.height - padY * 2);
-  ctx.setLineDash([]);
-  if (bbox) {
-    ctx.strokeStyle = ok ? "rgba(167,243,208,0.9)" : "rgba(251,113,133,0.9)";
-    ctx.lineWidth = 4;
-    ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h);
-  }
-}
-
-function stopPoseGuide() {
-  poseLoopRunning = false;
-  okStreak = 0;
-  setupPerfectPlayed = false;
-  drawGuide(null, false);
-}
-
-async function startPoseGuideIfPossible() {
-  if (poseLoopRunning || typeof Pose === "undefined") return;
-  if (!pose) {
-    pose = new Pose({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
-    });
-    pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6,
-    });
-    pose.onResults(onPoseResults);
-  }
-  okStreak = 0;
-  poseLoopRunning = true;
-  requestAnimationFrame(poseLoop);
-}
-
-function poseLoop(ts) {
-  if (!poseLoopRunning || !pose || !preview || preview.readyState < 2) return;
-  if (ts - lastPoseSentAt > 66) {
-    lastPoseSentAt = ts;
-    pose.send({ image: preview }).catch(() => {});
-  }
-  requestAnimationFrame(poseLoop);
-}
-
-function onPoseResults(results) {
-  const lms = results.poseLandmarks;
-  if (!lms || lms.length === 0) {
-    okStreak = 0;
-    if (framingPill) framingPill.textContent = "프레임에 전신이 들어오게 서주세요";
-    if (step6Status) step6Status.textContent = "위치를 맞춰주세요";
-    drawGuide(null, false);
-    return;
-  }
-  const pts = lms.filter((p) => (p.visibility ?? 0) > 0.55);
-  if (pts.length < 10) {
-    okStreak = 0;
-    drawGuide(null, false);
-    return;
-  }
-  let minX = 1, minY = 1, maxX = 0, maxY = 0;
-  pts.forEach((p) => {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  });
-  const h = maxY - minY;
-  const cx = (minX + maxX) / 2;
-  const okSize = h >= 0.6 && h <= 0.92;
-  const okCenter = Math.abs(cx - 0.5) <= 0.22;
-  const ok = okSize && okCenter;
-  const bbox = {
-    x: minX * overlay.width,
-    y: minY * overlay.height,
-    w: (maxX - minX) * overlay.width,
-    h: (maxY - minY) * overlay.height,
-  };
-  drawGuide(bbox, ok);
-  if (ok) {
-    okStreak++;
-    if (framingPill) framingPill.textContent = "세팅 좋아요! 유지하세요";
-    if (step6Status) step6Status.textContent = "잠시 후 연습이 시작됩니다";
-    if (okStreak >= 15 && !setupPerfectPlayed) {
-      setupPerfectPlayed = true;
-      beepSetupPerfect();
-      speak("세팅 완벽");
-      setTimeout(() => {
-        if (currentStep !== 6) return;
-        if (step6Status) step6Status.textContent = "5초 후 스윙 연습을 시작합니다";
-        setTimeout(() => {
-          if (currentStep !== 6) return;
-          speak("스윙 연습을 시작합니다. 준비하세요.");
-          if (step6Status) step6Status.textContent = "준비하세요.";
-          setTimeout(() => startRecordingPhase(), 2000);
-        }, 5000);
-      }, 800);
-    }
-  } else {
-    okStreak = 0;
-  }
-}
-
-function startRecordingPhase() {
-  showStep(7);
-  stopPoseGuide();
-  const previewRecord = $("previewRecord");
-  if (stream && previewRecord) {
-    previewRecord.srcObject = stream;
-    previewRecord.play().catch(() => {});
-  }
-  runRecordingLoop();
-}
-
-const RECORD_SECONDS = 8;
-const COUNTDOWN_SECONDS = 5;
-
-async function runRecordingLoop() {
-  const phaseText = $("recordPhaseText");
-  const countEl = $("recordCountdown");
-  const count = state.swingCount || 1;
-  state.clips = [];
-
-  for (let i = 1; i <= count; i++) {
-    phaseText.textContent = i === 1 ? "첫 번째 스윙" : `${i}번째 스윙`;
-    countEl.textContent = "";
-    beep();
-    speak(i === 1 ? "첫 번째 스윙" : `${i}번째 스윙`);
-    for (let s = COUNTDOWN_SECONDS; s >= 1; s--) {
-      countEl.textContent = s;
-      await sleep(1000);
-    }
-    countEl.textContent = "녹화 중";
-    const clip = await recordOneClip(i, RECORD_SECONDS);
-    state.clips.push(clip);
-    if (i < count) await sleep(500);
-  }
-
-  phaseText.textContent = "녹화 완료";
-  countEl.textContent = "";
-  showStep(8);
-  $("clipCount").textContent = state.clips.length;
-}
-
-async function recordOneClip(idx, seconds) {
-  const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-    ? "video/webm;codecs=vp9"
-    : "video/webm";
-  const chunks = [];
-  const rec = new MediaRecorder(stream, { mimeType: mime });
-  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-  rec.start(200);
-  await sleep(seconds * 1000);
-  rec.stop();
-  const blob = await new Promise((res) => {
-    rec.onstop = () => res(new Blob(chunks, { type: rec.mimeType || "video/webm" }));
-  });
-  return { idx, blob, mimeType: blob.type || "video/webm" };
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-async function uploadAndShowResults() {
-  const btn = $("btnAnalyze");
-  btn.disabled = true;
-  const resultsEl = $("results");
-  resultsEl.innerHTML = "<p class=\"screenSub\">분석 중...</p>";
-  showStep(9);
-
-  const fd = new FormData();
-  state.clips.forEach((c) => {
-    fd.append("clips", c.blob, `clip-${c.idx}.webm`);
-  });
-  fd.append("metrics_json", JSON.stringify(state.metricsByClip || {}));
-  fd.append("notes", [state.club ? `${state.club}번 클럽`, state.concern].filter(Boolean).join(" · "));
-
-  try {
-    const r = await fetch(`${BACKEND_BASE}/api/analyze`, { method: "POST", body: fd });
-    if (!r.ok) throw new Error(await r.text());
-    const data = await r.json();
-    const list = data.results || [];
-    resultsEl.innerHTML = "";
-
-    if (list.length === 0) {
-      resultsEl.innerHTML = `
-        <div class="resultCard resultCard--empty">
-          <p class="resultEmptyTitle">분석 결과가 없습니다</p>
-          <p class="resultEmptyText">저장된 클립이 없거나 서버에서 결과를 받지 못했을 수 있어요.<br>백엔드(포트 8002)가 켜져 있는지 확인하고, 다시 녹화 후 시도해 주세요.</p>
-        </div>
-      `;
-    } else {
-      list.forEach((res) => {
-        const div = document.createElement("div");
-        div.className = "resultCard";
-        const pos = (res.positives || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
-        const fix = (res.fixes || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
-        div.innerHTML = `
-          <h3>클립 ${res.clipIndex}</h3>
-          <div class="k"><strong>요약</strong></div>
-          <div class="v">${escapeHtml(res.summary || "")}</div>
-          <div class="k"><strong>좋은 점</strong></div>
-          <div class="v"><ul>${pos}</ul></div>
-          <div class="k"><strong>개선점</strong></div>
-          <div class="v"><ul>${fix}</ul></div>
-          <div class="k"><strong>드릴</strong></div>
-          <div class="v">${escapeHtml(res.drill || "")}</div>
-        `;
-        resultsEl.appendChild(div);
-      });
-    }
-  } catch (e) {
-    resultsEl.innerHTML = `
-      <div class="resultCard resultCard--error">
-        <p class="resultEmptyTitle">분석 실패</p>
-        <p class="resultEmptyText">${escapeHtml(e.message)}</p>
-        <p class="resultEmptyText">백엔드가 실행 중인지 확인해 주세요. (주소: ${escapeHtml(BACKEND_BASE)})</p>
-      </div>
-    `;
-  }
-  btn.disabled = false;
-}
-
-function resetFlow() {
-  stopCamera();
-  state = { club: null, swingCount: null, concern: "", clips: [], metricsByClip: {} };
-  setupPerfectPlayed = false;
-  showStep(0);
-  clearStep2();
-}
-
-$("btnAnalyze")?.addEventListener("click", uploadAndShowResults);
-$("btnAgain")?.addEventListener("click", resetFlow);
-
-// ---------- Init ----------
-showStep(0);
-initClubStep();
+/* ================================================================
+   초기화
+   ================================================================ */
+buildClubGrid();
+goStep(0);
