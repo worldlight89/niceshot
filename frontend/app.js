@@ -97,14 +97,10 @@ function goToStep1() {
 }
 window.niceshotGoNext = goToStep1;
 
-// ---------- 한 곳에서 모든 버튼 처리 (모바일 터치 안정) ----------
-document.querySelector(".app").addEventListener("click", function (e) {
-  var btn = e.target.closest("button");
-  if (!btn) return;
-
+// ---------- 한 곳에서 모든 버튼 처리 ----------
+function handleButtonAction(btn) {
   var next = btn.getAttribute("data-next");
   if (next !== null) {
-    e.preventDefault();
     var n = parseInt(next, 10);
     if (btn.id === "btnStep4Next") {
       state.concern = ($("concernInput") && $("concernInput").value ? $("concernInput").value.trim() : "");
@@ -113,11 +109,13 @@ document.querySelector(".app").addEventListener("click", function (e) {
     }
     if (btn.id === "btnStartPractice") {
       showStep(6);
-      if (step6Status) step6Status.textContent = "카메라를 켜는 중...";
+      var s6s = document.getElementById("step6Status");
+      if (s6s) s6s.textContent = "카메라를 켜는 중...";
       setupPerfectPlayed = false;
       okStreak = 0;
       startCamera().then(function () {
-        if (step6Status) step6Status.textContent = "위치를 맞추면 알림이 울립니다";
+        var s6s2 = document.getElementById("step6Status");
+        if (s6s2) s6s2.textContent = "위치를 맞추면 알림이 울립니다";
       });
       return;
     }
@@ -158,13 +156,23 @@ document.querySelector(".app").addEventListener("click", function (e) {
     if (n3) n3.disabled = false;
     return;
   }
-});
+}
 
+var _lastTouchTarget = null;
 document.querySelector(".app").addEventListener("touchend", function (e) {
   var btn = e.target.closest("button");
-  if (!btn || !btn.getAttribute("data-next")) return;
-  e.preventDefault();
+  if (!btn) return;
+  e.preventDefault(); // ghost click 방지
+  _lastTouchTarget = btn;
+  handleButtonAction(btn);
 }, { passive: false });
+
+document.querySelector(".app").addEventListener("click", function (e) {
+  var btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn === _lastTouchTarget) { _lastTouchTarget = null; return; } // 터치 후 중복 click 무시
+  handleButtonAction(btn);
+});
 
 function initClubStep() {
   var wrap = $("clubWrap");
