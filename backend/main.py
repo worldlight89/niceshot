@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from gemini_coach import coach_with_gemini
 
-app = FastAPI(title="Golf Swing Coach MVP")
+app = FastAPI(title="Golf Swing Coach – NICESHOT")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,42 +26,66 @@ def health() -> dict[str, str]:
 
 @app.post("/api/analyze")
 async def analyze(
-    clips: list[UploadFile] = File(...),
-    # Optional JSON string with per-clip metrics extracted on client (pose, timestamps, etc.)
-    metrics_json: str = Form(default="{}"),
+    clips: list[UploadFile] = File(default=[]),
+    # 스윙별 프레임 이미지(base64) + 포즈 수치
+    # 형식: [{"swing":1, "address":{"base64":..., "metrics":{...}}, "top":..., "impact":...}, ...]
+    frames_json: str = Form(default="[]"),
     notes: str = Form(default=""),
+    club: str = Form(default=""),
 ) -> dict[str, Any]:
     """
-    Accepts 1~5 video clips and returns coaching per clip.
-    This MVP does not run pose estimation on the server (keeps it light).
+    프론트엔드에서 전송한 3장 캡처 이미지 + MediaPipe 수치를 받아
+    Gemini 멀티모달로 프로 골프 코칭을 반환합니다.
+
+    frames_json 형식:
+    [
+      {
+        "swing": 1,
+        "address": {"base64": "data:image/jpeg;base64,...", "metrics": {...}},
+        "top":     {"base64": "...", "metrics": {...}},
+        "impact":  {"base64": "...", "metrics": {...}}
+      },
+      ...
+    ]
     """
+    # 영상 파일은 받기만 하고 분석에는 사용하지 않음 (대역폭 확인용)
+    for clip in clips:
+        await clip.read()
+
+    # frames_json 파싱
     try:
-        metrics_all = json.loads(metrics_json) if metrics_json else {}
-        if not isinstance(metrics_all, dict):
-            metrics_all = {}
+        frames_list = json.loads(frames_json) if frames_json else []
+        if not isinstance(frames_list, list):
+            frames_list = []
     except Exception:
-        metrics_all = {}
+        frames_list = []
+
+    # 스윙 수가 0이면 clips 수만큼 빈 프레임으로 채움
+    if not frames_list:
+        frames_list = [{"swing": i + 1} for i in range(max(len(clips), 1))]
 
     results: list[dict[str, Any]] = []
-    for i, clip in enumerate(clips, start=1):
-        # Read once to ensure upload is valid; we don't store video in MVP.
-        _ = await clip.read()
+    for i, frame_set in enumerate(frames_list, start=1):
+        if not isinstance(frame_set, dict):
+            frame_set = {}
 
-        per_metrics = metrics_all.get(str(i), {}) if isinstance(metrics_all, dict) else {}
-        if not isinstance(per_metrics, dict):
-            per_metrics = {}
+        frames = {
+            "address": frame_set.get("address", {}),
+            "top":     frame_set.get("top",     {}),
+            "impact":  frame_set.get("impact",  {}),
+        }
 
-        coaching = coach_with_gemini(clip_idx=i, metrics=per_metrics, notes=notes)
-        results.append(
-            {
-                "clipIndex": i,
-                "filename": clip.filename,
-                "summary": coaching.summary,
-                "positives": coaching.positives,
-                "fixes": coaching.fixes,
-                "drill": coaching.drill,
-            }
+        coaching = coach_with_gemini(
+            clip_idx=i,
+            frames=frames,
+            notes=notes,
+            club=club,
         )
 
-    return {"count": len(results), "results": results}
+        results.append({
+            "swing": i,
+            "summary": coaching.summary,
+            "coaching": coaching.coaching,
+        })
 
+    return {"count": len(results), "results": results}

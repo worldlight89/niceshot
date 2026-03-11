@@ -359,6 +359,43 @@ html, body {
   white-space: pre-wrap;
 }
 
+.coaching-body {
+  font-size: 0.9rem;
+  line-height: 1.75;
+  color: #444;
+}
+
+.coaching-body h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #2d6a4f;
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e8f5ee;
+}
+
+.coaching-body h4:first-child {
+  margin-top: 0;
+}
+
+.coaching-body strong {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.coaching-body ul {
+  padding-left: 16px;
+  margin: 4px 0;
+}
+
+.coaching-body li {
+  margin-bottom: 4px;
+}
+
+.coaching-body p {
+  margin: 6px 0;
+}
+
 /* ─── Info box (안내 박스) ───────────────────── */
 .info-box {
   background: #fff;
