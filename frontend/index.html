@@ -23,6 +23,11 @@
   <div id="step1" class="step">
     <div class="center">
       <h2 class="question">스윙 연습을<br>시작하시겠습니까?</h2>
+      <div class="info-box">
+        <p class="info-row">📱 폰을 세워두고 혼자서도 사용 가능</p>
+        <p class="info-row">🤖 AI가 클럽별 스윙 자세를 분석해 드립니다</p>
+        <p class="info-row">🎤 음성 명령 지원 ("시작", "다시")</p>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="goStep(2)">시작하기</button>
   </div>
@@ -68,6 +73,12 @@
         <p class="summary-row">스윙 횟수: <strong id="summaryCount">-</strong>회</p>
         <p class="summary-row" id="concernRow" style="display:none">고민: <span id="summaryConern" class="concern-text"></span></p>
       </div>
+      <div class="info-box">
+        <p class="info-row">📱 폰을 1.5~2m 앞에 세운 후 연습 시작을 눌러주세요</p>
+        <p class="info-row">🧍 전신이 화면에 들어오면 5초 후 자동으로 녹화 시작</p>
+        <p class="info-row">🔄 스윙 후 잠깐 나갔다 돌아오면 다음 스윙 자동 시작</p>
+        <p class="info-row">🎤 "시작" 말하면 즉시 시작, "다시" 말하면 재녹화</p>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="startPractice()">📹 연습 시작</button>
   </div>
@@ -79,9 +90,19 @@
       <canvas id="poseOverlay"></canvas>
       <div class="frame-guide"></div>
       <div class="pill" id="framePill">전신이 프레임 안에 들어오게 서주세요</div>
+
+      <!-- 음성 인디케이터 -->
+      <div class="voice-indicator" id="voiceIndicator">
+        <span class="mic">🎤</span>
+        <span id="voiceStatusText">음성 준비 중...</span>
+      </div>
+      <!-- 들린 음성 표시 -->
+      <div class="voice-heard" id="voiceHeard"></div>
     </div>
+
     <div class="camera-bar">
       <p id="cameraStatus">카메라 켜는 중...</p>
+      <p id="camTip" class="cam-tip"></p>
     </div>
   </div>
 
@@ -89,10 +110,22 @@
   <div id="step7" class="step step-camera">
     <div class="video-wrap">
       <video id="recordVideo" autoplay playsinline muted></video>
+
       <div class="record-overlay">
         <p id="recordPhase" class="record-phase">준비 중</p>
         <p id="recordCountdown" class="record-countdown"></p>
       </div>
+
+      <!-- 스윙 사이 안내 -->
+      <div class="between-guide" id="betweenGuide" style="display:none"></div>
+
+      <!-- 음성 인디케이터 -->
+      <div class="voice-indicator" id="voiceIndicator2">
+        <span class="mic">🎤</span>
+        <span id="voiceStatusText2">음성 듣는 중</span>
+      </div>
+      <!-- 들린 음성 표시 -->
+      <div class="voice-heard" id="voiceHeard2"></div>
     </div>
   </div>
 
@@ -116,5 +149,33 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+
+  <script>
+    // Step 7 음성 인디케이터도 app.js의 setVoiceStatus와 동기화
+    var _origSetVoice = window.setVoiceStatus;
+    window.setVoiceStatus = function(s) {
+      if (_origSetVoice) _origSetVoice(s);
+      var ind2 = document.getElementById('voiceIndicator2');
+      var txt2 = document.getElementById('voiceStatusText2');
+      if (!ind2) return;
+      if (s === 'on') {
+        ind2.classList.add('listening');
+        if (txt2) txt2.textContent = '음성 듣는 중 — "시작" / "다시"';
+      } else {
+        ind2.classList.remove('listening');
+        if (txt2) txt2.textContent = '음성 인식 꺼짐';
+      }
+    };
+    window.showVoiceHeard = function(text) {
+      ['voiceHeard','voiceHeard2'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = '"' + text + '"';
+        el.style.opacity = '1';
+        clearTimeout(el._t);
+        el._t = setTimeout(function() { el.style.opacity = '0'; }, 1800);
+      });
+    };
+  </script>
 </body>
 </html>
