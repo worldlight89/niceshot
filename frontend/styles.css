@@ -18,6 +18,7 @@
 html, body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -28,20 +29,29 @@ body {
 }
 
 .app {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
-/* ----- 한 페이지 한 화면 ----- */
+/* ----- 한 화면 = 한 스텝. 스크롤 없이 누르고 넘어가는 방식 ----- */
 .screen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  min-height: 100dvh;
   padding: 28px 24px 40px;
   text-align: center;
+  overflow: hidden;
+}
+
+.screen[hidden] {
+  display: none !important;
 }
 
 .screenFull {
@@ -52,7 +62,7 @@ body {
 .screenFull .previewWrap {
   flex: 1;
   width: 100%;
-  min-height: 50vh;
+  min-height: 0;
 }
 
 /* Step 0: 앱 이름 */
@@ -276,13 +286,14 @@ body {
   margin: 0;
 }
 
-/* 결과 */
+/* 결과 (step 9: 이 영역만 스크롤, 페이지는 고정) */
 .results {
+  flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: 400px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   text-align: left;
-  max-height: 50vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
