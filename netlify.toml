@@ -1,0 +1,15 @@
+# NICESHOT 웹앱 - Netlify 배포 설정
+# 저장소 루트가 golf-swing-coach-mvp 라고 가정
+
+[build]
+  command = "node scripts/netlify-build.js"
+  publish = "frontend"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# SPA처럼 보이도록 모든 경로를 index.html 로
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>NICESHOT</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Step 0: 앱 이름 -->
+      <section id="step0" class="screen">
+        <p class="appName">NICESHOT</p>
+        <p class="screenHint">화면을 눌러 시작</p>
+      </section>
+
+      <!-- Step 1: 스윙 연습 시작하시겠습니까? -->
+      <section id="step1" class="screen" hidden>
+        <p class="screenQuestion">스윙 연습을 시작하시겠습니까?</p>
+        <button type="button" class="cta" id="btnStartYes">시작하기</button>
+      </section>
+
+      <!-- Step 2: 몇 번 클럽? -->
+      <section id="step2" class="screen" hidden>
+        <p class="screenQuestion">몇 번 클럽으로 연습을 하실건가요?</p>
+        <div class="clubWrap" id="clubWrap"></div>
+        <button type="button" class="cta cta--secondary" id="btnStep2Next" disabled>다음</button>
+      </section>
+
+      <!-- Step 3: 몇 번 스윙? -->
+      <section id="step3" class="screen" hidden>
+        <p class="screenQuestion">몇 번의 스윙을 하실건가요?</p>
+        <div class="optionWrap">
+          <button type="button" class="chip" data-value="1">1회</button>
+          <button type="button" class="chip" data-value="2">2회</button>
+          <button type="button" class="chip" data-value="3">3회</button>
+          <button type="button" class="chip" data-value="4">4회</button>
+          <button type="button" class="chip" data-value="5">5회</button>
+        </div>
+        <button type="button" class="cta cta--secondary" id="btnStep3Next" disabled>다음</button>
+      </section>
+
+      <!-- Step 4: 고민 -->
+      <section id="step4" class="screen" hidden>
+        <p class="screenQuestion">스윙 시 고민이 무엇인가요?</p>
+        <textarea id="concernInput" class="inputText" placeholder="직접 입력 (선택)" rows="3"></textarea>
+        <button type="button" class="cta cta--outline" id="btnSkipConcern">선택안함</button>
+        <button type="button" class="cta cta--secondary" id="btnStep4Next">다음</button>
+      </section>
+
+      <!-- Step 5: 연습 시작 확인 -->
+      <section id="step5" class="screen" hidden>
+        <p class="screenQuestion">스윙 연습 시작</p>
+        <p class="screenSub"><span id="summaryClub">-</span>번 클럽 · <span id="summaryCount">-</span>회 스윙</p>
+        <button type="button" class="cta" id="btnStartPractice">스윙 연습 시작</button>
+      </section>
+
+      <!-- Step 6: 카메라 세팅 -->
+      <section id="step6" class="screen screenFull" hidden>
+        <p class="screenQuestion screenQuestionOverlay">카메라를 세팅하세요</p>
+        <div class="previewWrap">
+          <video id="preview" playsinline autoplay muted></video>
+          <canvas id="overlay" class="overlay"></canvas>
+          <p id="framingPill" class="framingPill">프레임에 전신이 들어오게 서주세요</p>
+        </div>
+        <p class="screenSub screenSubBottom" id="step6Status">위치를 맞추면 알림이 울립니다</p>
+      </section>
+
+      <!-- Step 7: 녹화 -->
+      <section id="step7" class="screen screenFull" hidden>
+        <div class="previewWrap">
+          <video id="previewRecord" playsinline autoplay muted></video>
+        </div>
+        <div class="recordOverlay">
+          <p id="recordPhaseText" class="recordPhaseText">준비 중</p>
+          <p id="recordCountdown" class="recordCountdown"></p>
+        </div>
+      </section>
+
+      <!-- Step 8: 분석 요청 -->
+      <section id="step8" class="screen" hidden>
+        <p class="screenQuestion">녹화 완료</p>
+        <p class="screenSub"><span id="clipCount">0</span>개 클립 저장됨</p>
+        <button type="button" class="cta" id="btnAnalyze">분석 및 피드백 받기</button>
+      </section>
+
+      <!-- Step 9: 결과 -->
+      <section id="step9" class="screen" hidden>
+        <p class="screenQuestion">분석 결과</p>
+        <div id="results" class="results"></div>
+        <button type="button" class="cta cta--secondary" id="btnAgain">처음부터 다시하기</button>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

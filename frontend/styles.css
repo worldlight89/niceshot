@@ -1,0 +1,342 @@
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --text: #1a1a1a;
+  --muted: #5c5c5c;
+  --line: #e0e0e0;
+  --primary: #0d9488;
+  --primaryDark: #0f766e;
+  --accent: #0d9488;
+  --radius: 16px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ----- 한 페이지 한 화면 ----- */
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 28px 24px 40px;
+  text-align: center;
+}
+
+.screenFull {
+  padding: 0;
+  justify-content: flex-start;
+}
+
+.screenFull .previewWrap {
+  flex: 1;
+  width: 100%;
+  min-height: 50vh;
+}
+
+/* Step 0: 앱 이름 */
+.appName {
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--primary);
+  margin: 0 0 12px;
+}
+
+.screenHint {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+#step0 {
+  cursor: pointer;
+}
+
+/* 질문 / 문구 */
+.screenQuestion {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text);
+  margin: 0 0 32px;
+  max-width: 320px;
+}
+
+.screenQuestionOverlay {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  z-index: 2;
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+  margin: 0;
+}
+
+.screenSub {
+  font-size: 1rem;
+  color: var(--muted);
+  margin: 0 0 28px;
+}
+
+.screenSubBottom {
+  position: absolute;
+  bottom: 28px;
+  left: 24px;
+  right: 24px;
+  margin: 0;
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+/* CTA 버튼 */
+.cta {
+  width: 100%;
+  max-width: 320px;
+  padding: 18px 24px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.cta:active {
+  background: var(--primaryDark);
+}
+
+.cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cta--secondary {
+  margin-top: 12px;
+  background: var(--card);
+  color: var(--text);
+  border: 2px solid var(--line);
+}
+
+.cta--outline {
+  background: transparent;
+  color: var(--muted);
+  border: 2px solid var(--line);
+  margin-bottom: 8px;
+}
+
+/* 클럽 선택 */
+.clubWrap {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 28px;
+}
+
+.clubBtn {
+  padding: 16px 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.clubBtn.selected {
+  border-color: var(--primary);
+  background: rgba(13, 148, 136, 0.1);
+  color: var(--primary);
+}
+
+/* 1~5 선택 */
+.optionWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.chip {
+  padding: 16px 24px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chip.selected {
+  border-color: var(--primary);
+  background: rgba(13, 148, 136, 0.1);
+  color: var(--primary);
+}
+
+/* 고민 입력 */
+.inputText {
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 12px;
+  padding: 16px;
+  font-size: 1rem;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  resize: vertical;
+}
+
+.inputText::placeholder {
+  color: var(--muted);
+}
+
+/* 카메라 / 녹화 */
+.previewWrap {
+  position: relative;
+  width: 100%;
+  background: #000;
+}
+
+.previewWrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.framingPill {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  border-radius: 10px;
+  margin: 0;
+}
+
+.recordOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 24px 20px 40px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  color: #fff;
+  text-align: center;
+}
+
+.recordPhaseText {
+  font-size: 1.2rem;
+  margin: 0 0 8px;
+}
+
+.recordCountdown {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* 결과 */
+.results {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 24px;
+  text-align: left;
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.resultCard {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+}
+
+.resultCard h3 {
+  font-size: 1rem;
+  margin: 0 0 12px;
+  color: var(--primary);
+}
+
+.resultCard .k { color: var(--muted); font-size: 0.85rem; margin-top: 10px; }
+.resultCard .k:first-of-type { margin-top: 0; }
+.resultCard .v { font-size: 0.95rem; line-height: 1.55; margin-bottom: 8px; }
+.resultCard .v ul { margin: 4px 0 0; padding-left: 20px; }
+
+.resultCard--empty,
+.resultCard--error {
+  text-align: center;
+}
+
+.resultEmptyTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+
+.resultEmptyText {
+  font-size: 0.95rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.resultCard--error .resultEmptyTitle {
+  color: #b91c1c;
+}
+
+#step7 .previewWrap {
+  position: absolute;
+  inset: 0;
+}
+
+#step7 .previewWrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
