@@ -21,6 +21,11 @@ let setupPerfectPlayed = false;
 
 const CLUBS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "PW", "드라이버"];
 
+const preview = $("preview");
+const overlay = $("overlay");
+const framingPill = $("framingPill");
+const step6Status = $("step6Status");
+
 function showStep(n) {
   steps.forEach((s) => {
     const el = document.getElementById(`step${s}`);
@@ -86,36 +91,90 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ---------- Step 0: NICESHOT (탭/클릭하면 다음) ----------
+// ---------- Step 0: NICESHOT ----------
 function goToStep1() {
   showStep(1);
 }
 window.niceshotGoNext = goToStep1;
-$("step0")?.addEventListener("click", goToStep1);
-$("btnStartApp")?.addEventListener("click", function(e) {
-  e.stopPropagation();
-  goToStep1();
+
+// ---------- 한 곳에서 모든 버튼 처리 (모바일 터치 안정) ----------
+document.querySelector(".app").addEventListener("click", function (e) {
+  var btn = e.target.closest("button");
+  if (!btn) return;
+
+  var next = btn.getAttribute("data-next");
+  if (next !== null) {
+    e.preventDefault();
+    var n = parseInt(next, 10);
+    if (btn.id === "btnStep4Next") {
+      state.concern = ($("concernInput") && $("concernInput").value ? $("concernInput").value.trim() : "");
+      if ($("summaryClub")) $("summaryClub").textContent = state.club || "-";
+      if ($("summaryCount")) $("summaryCount").textContent = state.swingCount ?? "-";
+    }
+    if (btn.id === "btnStartPractice") {
+      showStep(6);
+      if (step6Status) step6Status.textContent = "카메라를 켜는 중...";
+      setupPerfectPlayed = false;
+      okStreak = 0;
+      startCamera().then(function () {
+        if (step6Status) step6Status.textContent = "위치를 맞추면 알림이 울립니다";
+      });
+      return;
+    }
+    showStep(n);
+    return;
+  }
+
+  if (btn.id === "btnSkipConcern") {
+    if ($("concernInput")) $("concernInput").value = "";
+    state.concern = "";
+    return;
+  }
+  if (btn.id === "btnAnalyze") {
+    uploadAndShowResults();
+    return;
+  }
+  if (btn.id === "btnAgain") {
+    resetFlow();
+    return;
+  }
+
+  if (btn.classList.contains("clubBtn")) {
+    var wrap = $("clubWrap");
+    if (wrap) {
+      wrap.querySelectorAll(".clubBtn").forEach(function (b) { b.classList.remove("selected"); });
+      btn.classList.add("selected");
+      state.club = btn.textContent;
+      var n2 = $("btnStep2Next");
+      if (n2) n2.disabled = false;
+    }
+    return;
+  }
+  if (btn.classList.contains("chip") && btn.closest("#step3")) {
+    document.querySelectorAll("#step3 .chip").forEach(function (b) { b.classList.remove("selected"); });
+    btn.classList.add("selected");
+    state.swingCount = parseInt(btn.getAttribute("data-value"), 10);
+    var n3 = $("btnStep3Next");
+    if (n3) n3.disabled = false;
+    return;
+  }
 });
 
-// ---------- Step 1: 시작하시겠습니까? ----------
-$("btnStartYes")?.addEventListener("click", () => showStep(2));
+document.querySelector(".app").addEventListener("touchend", function (e) {
+  var btn = e.target.closest("button");
+  if (!btn || !btn.getAttribute("data-next")) return;
+  e.preventDefault();
+}, { passive: false });
 
-// ---------- Step 2: 몇 번 클럽? ----------
 function initClubStep() {
-  const wrap = $("clubWrap");
+  var wrap = $("clubWrap");
   if (!wrap) return;
   wrap.innerHTML = "";
-  CLUBS.forEach((c) => {
-    const btn = document.createElement("button");
+  CLUBS.forEach(function (c) {
+    var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "clubBtn";
     btn.textContent = c;
-    btn.addEventListener("click", () => {
-      wrap.querySelectorAll(".clubBtn").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-      state.club = c;
-      $("btnStep2Next").disabled = false;
-    });
     wrap.appendChild(btn);
   });
 }
@@ -123,53 +182,14 @@ function initClubStep() {
 function clearStep2() {
   state.club = null;
   state.swingCount = null;
-  $("clubWrap")?.querySelectorAll(".clubBtn").forEach((b) => b.classList.remove("selected"));
-  $("btnStep2Next").disabled = true;
-  document.querySelectorAll("#step3 .chip").forEach((b) => b.classList.remove("selected"));
-  $("btnStep3Next").disabled = true;
+  var wrap = $("clubWrap");
+  if (wrap) wrap.querySelectorAll(".clubBtn").forEach(function (b) { b.classList.remove("selected"); });
+  var n2 = $("btnStep2Next");
+  if (n2) n2.disabled = true;
+  document.querySelectorAll("#step3 .chip").forEach(function (b) { b.classList.remove("selected"); });
+  var n3 = $("btnStep3Next");
+  if (n3) n3.disabled = true;
 }
-
-$("btnStep2Next")?.addEventListener("click", () => showStep(3));
-
-// ---------- Step 3: 몇 번 스윙? ----------
-document.querySelectorAll("#step3 .chip").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("#step3 .chip").forEach((b) => b.classList.remove("selected"));
-    btn.classList.add("selected");
-    state.swingCount = Number(btn.dataset.value);
-    $("btnStep3Next").disabled = false;
-  });
-});
-
-$("btnStep3Next")?.addEventListener("click", () => showStep(4));
-
-// ---------- Step 4: 고민 ----------
-$("btnSkipConcern")?.addEventListener("click", () => {
-  $("concernInput").value = "";
-  state.concern = "";
-});
-
-$("btnStep4Next")?.addEventListener("click", () => {
-  state.concern = ($("concernInput")?.value || "").trim();
-  showStep(5);
-  $("summaryClub").textContent = state.club || "-";
-  $("summaryCount").textContent = state.swingCount ?? "-";
-});
-
-// ---------- Step 5: 연습 시작 ----------
-const preview = $("preview");
-const overlay = $("overlay");
-const framingPill = $("framingPill");
-const step6Status = $("step6Status");
-
-$("btnStartPractice")?.addEventListener("click", async () => {
-  showStep(6);
-  if (step6Status) step6Status.textContent = "카메라를 켜는 중...";
-  setupPerfectPlayed = false;
-  okStreak = 0;
-  await startCamera();
-  if (step6Status) step6Status.textContent = "위치를 맞추면 알림이 울립니다";
-});
 
 async function startCamera() {
   if (stream) return stream;
