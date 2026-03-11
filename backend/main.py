@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
+
+# .env 파일 자동 로드
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
