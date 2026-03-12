@@ -11,6 +11,15 @@ try:
 except ImportError:
     pass
 
+# Railway: GOOGLE_APPLICATION_CREDENTIALS_JSON → 임시 파일로 저장
+import tempfile
+_sa_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
+if _sa_json and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+    _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    _tmp.write(_sa_json)
+    _tmp.flush()
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
+
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
