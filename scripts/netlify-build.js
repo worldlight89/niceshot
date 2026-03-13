@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const apiUrl = process.env.NICESHOT_API_URL || "";
+const apiUrl = process.env.NICESHOT_API_URL || "https://niceshot-production.up.railway.app";
 const outPath = path.join(__dirname, "..", "frontend", "config.js");
 const content = `// Netlify 빌드 시 자동 생성됨. 백엔드 API 주소입니다.
 window.NICESHOT_API_URL = ${JSON.stringify(apiUrl)};
