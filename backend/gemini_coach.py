@@ -50,30 +50,38 @@ def _placeholder(clip_idx: int) -> CoachingResult:
 
 
 # ─── Gemini 클라이언트 초기화 ────────────────────────────────────────
+_client_error: str = ""   # 전역 에러 메시지 저장
+
 def _build_client():
-    """
-    Priority:
-    1) Vertex AI: VERTEX_PROJECT_ID 환경변수
-    2) Gemini API Key: GEMINI_API_KEY 환경변수
-    """
+    global _client_error
     try:
         from google import genai  # type: ignore
-    except Exception:
+    except Exception as e:
+        _client_error = f"google-genai 패키지 임포트 실패: {e}"
         return None, None
 
     vertex_project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
     if vertex_project:
         location = os.environ.get("VERTEX_LOCATION", "us-central1").strip() or "us-central1"
         model = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-        client = genai.Client(vertexai=True, project=vertex_project, location=location)
-        return client, model
+        try:
+            client = genai.Client(vertexai=True, project=vertex_project, location=location)
+            return client, model
+        except Exception as e:
+            _client_error = f"Vertex AI 클라이언트 초기화 실패: {type(e).__name__}: {e}"
+            return None, None
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if api_key:
         model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-        client = genai.Client(api_key=api_key)
-        return client, model
+        try:
+            client = genai.Client(api_key=api_key)
+            return client, model
+        except Exception as e:
+            _client_error = f"Gemini API Key 클라이언트 실패: {type(e).__name__}: {e}"
+            return None, None
 
+    _client_error = "VERTEX_PROJECT_ID 또는 GEMINI_API_KEY 환경변수 없음"
     return None, None
 
 
@@ -152,7 +160,10 @@ def coach_with_gemini(
     """
     client, model = _build_client()
     if not client or not model:
-        return _placeholder(clip_idx)
+        ph = _placeholder(clip_idx)
+        if _client_error:
+            ph.coaching = f"## Gemini 연결 실패\n\n**원인:** {_client_error}\n\n---\n\n" + ph.coaching
+        return ph
 
     try:
         from google.genai import types  # type: ignore
