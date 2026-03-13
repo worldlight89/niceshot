@@ -178,13 +178,13 @@ def coach_with_gemini(
             try:
                 image_bytes = base64.b64decode(raw)
                 parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
-                parts.append(types.Part.from_text(f"[{label} 프레임]"))
+                parts.append(types.Part.from_text(text=f"[{label} 프레임]"))
             except Exception:
                 pass  # 이미지 디코딩 실패 시 텍스트만
 
     # 텍스트 프롬프트 추가
     prompt = _build_prompt(clip_idx, club, notes, metrics_by_phase)
-    parts.append(types.Part.from_text(prompt))
+    parts.append(types.Part.from_text(text=prompt))
 
     if not parts:
         return _placeholder(clip_idx)
