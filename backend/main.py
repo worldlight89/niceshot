@@ -12,14 +12,17 @@ except ImportError:
     pass
 
 # Railway: GOOGLE_APPLICATION_CREDENTIALS_JSON → 임시 파일로 저장
-# GOOGLE_APPLICATION_CREDENTIALS_JSON 이 있으면 항상 우선 적용 (로컬 경로 덮어쓰기)
 import tempfile
 _sa_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
 if _sa_json:
-    _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-    _tmp.write(_sa_json)
-    _tmp.flush()
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
+    try:
+        _fd, _tmppath = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+            _f.write(_sa_json)
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmppath
+        print(f"[SA] Credentials written to {_tmppath} ({len(_sa_json)} chars)")
+    except Exception as _e:
+        print(f"[SA] Failed to write credentials: {_e}")
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
