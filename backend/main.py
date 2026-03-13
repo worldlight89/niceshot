@@ -12,9 +12,10 @@ except ImportError:
     pass
 
 # Railway: GOOGLE_APPLICATION_CREDENTIALS_JSON → 임시 파일로 저장
+# GOOGLE_APPLICATION_CREDENTIALS_JSON 이 있으면 항상 우선 적용 (로컬 경로 덮어쓰기)
 import tempfile
 _sa_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
-if _sa_json and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+if _sa_json:
     _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
     _tmp.write(_sa_json)
     _tmp.flush()
