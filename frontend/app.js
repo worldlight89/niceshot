@@ -326,7 +326,10 @@ function analyzeFramesWithPose(rawFrames, callback) {
     };
     poseDetector.onResults(function (res) {
       var metrics = res.poseLandmarks ? extractDetailedMetrics(res.poseLandmarks) : {};
-      results[item.idx] = { label: item.frame.label, base64: item.frame.base64, metrics: metrics };
+      var landmarks = res.poseLandmarks ? res.poseLandmarks.map(function (lm) {
+        return { x: lm.x, y: lm.y, visibility: lm.visibility || 0 };
+      }) : [];
+      results[item.idx] = { label: item.frame.label, base64: item.frame.base64, metrics: metrics, landmarks: landmarks };
       next();
     });
     img.src = item.frame.base64;
@@ -475,36 +478,253 @@ function uploadAndAnalyze() {
     });
 }
 
+/* ── MediaPipe 관절 이름 (인덱스 0~32) ── */
+var JOINT_NAMES = [
+  'nose','left_eye_inner','left_eye','left_eye_outer',
+  'right_eye_inner','right_eye','right_eye_outer',
+  'left_ear','right_ear','mouth_left','mouth_right',
+  'left_shoulder','right_shoulder','left_elbow','right_elbow',
+  'left_wrist','right_wrist','left_pinky','right_pinky',
+  'left_index','right_index','left_thumb','right_thumb',
+  'left_hip','right_hip','left_knee','right_knee',
+  'left_ankle','right_ankle','left_heel','right_heel',
+  'left_foot_index','right_foot_index'
+];
+
+var POSE_CONNECTIONS = [
+  [11,12],[11,13],[13,15],[12,14],[14,16],
+  [15,17],[15,19],[16,18],[16,20],
+  [11,23],[12,24],[23,24],
+  [23,25],[25,27],[24,26],[26,28],
+  [27,29],[29,31],[28,30],[30,32]
+];
+
+/* ── 포즈 캔버스 그리기 ── */
+function drawPoseCanvas(canvas, imageBase64, landmarks, corrections) {
+  var ctx = canvas.getContext('2d');
+  var img = new Image();
+  img.onload = function () {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+    if (!landmarks || !landmarks.length) return;
+
+    var w = canvas.width, h = canvas.height;
+
+    /* 어느 관절이 교정 필요한지 + 방향 */
+    var badMap = {};   // idx → direction string
+    (corrections || []).forEach(function (c) {
+      var idx = JOINT_NAMES.indexOf(c.joint);
+      if (idx >= 0) badMap[idx] = c.direction || '';
+    });
+
+    /* 스켈레톤 선 */
+    POSE_CONNECTIONS.forEach(function (conn) {
+      var a = landmarks[conn[0]], b = landmarks[conn[1]];
+      if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x * w, a.y * h);
+      ctx.lineTo(b.x * w, b.y * h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = Math.max(1, w * 0.004);
+      ctx.stroke();
+    });
+
+    /* 관절 점 */
+    var DOT_R = Math.max(4, w * 0.012);
+    landmarks.forEach(function (lm, i) {
+      if (!lm || lm.visibility < 0.25) return;
+      var cx = lm.x * w, cy = lm.y * h;
+      var isBad = i in badMap;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, isBad ? DOT_R * 1.4 : DOT_R, 0, Math.PI * 2);
+      ctx.fillStyle = isBad ? '#FF3B3B' : '#3BFF88';
+      ctx.fill();
+
+      if (isBad) {
+        /* 빨간 강조 링 */
+        ctx.beginPath();
+        ctx.arc(cx, cy, DOT_R * 2.8, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,59,59,0.75)';
+        ctx.lineWidth = Math.max(2, w * 0.004);
+        ctx.stroke();
+
+        /* 방향 화살표 → 초록 이상 위치 */
+        var dir = badMap[i];
+        var OFFSET = w * 0.08;
+        var dx = 0, dy = 0;
+        if (dir === 'up')      dy = -OFFSET;
+        else if (dir === 'down')    dy =  OFFSET;
+        else if (dir === 'left' || dir === 'back')  dx = -OFFSET;
+        else if (dir === 'right' || dir === 'forward') dx =  OFFSET;
+
+        if (dx !== 0 || dy !== 0) {
+          /* 점선 화살표 */
+          ctx.save();
+          ctx.setLineDash([w * 0.012, w * 0.008]);
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + dx, cy + dy);
+          ctx.strokeStyle = '#3BFF88';
+          ctx.lineWidth = Math.max(2, w * 0.004);
+          ctx.stroke();
+          ctx.restore();
+
+          /* 초록 목표 점 */
+          ctx.beginPath();
+          ctx.arc(cx + dx, cy + dy, DOT_R * 1.4, 0, Math.PI * 2);
+          ctx.fillStyle = '#3BFF88';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(cx + dx, cy + dy, DOT_R * 2.5, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(59,255,136,0.6)';
+          ctx.lineWidth = Math.max(2, w * 0.004);
+          ctx.stroke();
+        }
+      }
+    });
+  };
+  img.src = imageBase64;
+}
+
+/* ── 결과 화면 렌더링 ── */
 function showResults(data) {
   var wrap = document.getElementById('resultsWrap');
   if (!wrap) return;
   wrap.innerHTML = '';
+
   var items = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [data];
   if (!items.length) {
     wrap.innerHTML = '<div class="result-card"><h3>결과 없음</h3><p>분석 결과가 없습니다.</p></div>';
     return;
   }
-  items.forEach(function (item, i) {
-    var card = document.createElement('div');
-    card.className = 'result-card';
-    var coaching = item.coaching || item.summary || item.message || '';
-    var html = '<h3>스윙 ' + (i + 1) + ' — ' + (state.club || '') + ' 코칭</h3>';
-    // 마크다운 ## 섹션을 카드 내 소제목으로 렌더링
-    html += '<div class="coaching-body">' + formatCoaching(coaching) + '</div>';
-    card.innerHTML = html;
-    wrap.appendChild(card);
+
+  items.forEach(function (item, swingIdx) {
+    /* 스윙별 섹션 */
+    var swingDiv = document.createElement('div');
+    swingDiv.className = 'swing-section';
+    swingDiv.innerHTML = '<h3 class="swing-title">스윙 ' + (swingIdx + 1) + ' — ' + (state.club || '') + '</h3>';
+
+    /* Gemini JSON 파싱 */
+    var coaching = null;
+    try {
+      var raw = item.coaching || '';
+      /* ```json ... ``` 블록 제거 */
+      raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      coaching = JSON.parse(raw);
+    } catch (e) { coaching = null; }
+
+    /* 3장 프레임 행 */
+    var phases = [
+      { key: 'address', label: '어드레스',  frameLabel: '어드레스' },
+      { key: 'top',     label: '백스윙 탑', frameLabel: '백스윙 탑' },
+      { key: 'impact',  label: '임팩트',    frameLabel: '임팩트' }
+    ];
+
+    var framesRow = document.createElement('div');
+    framesRow.className = 'frames-row';
+
+    var swingFrameSet = state.swingFrames[swingIdx] || [];
+
+    phases.forEach(function (phase) {
+      var frame = null;
+      for (var fi = 0; fi < swingFrameSet.length; fi++) {
+        if (swingFrameSet[fi] && swingFrameSet[fi].label === phase.frameLabel) {
+          frame = swingFrameSet[fi]; break;
+        }
+      }
+
+      var phaseDiv = document.createElement('div');
+      phaseDiv.className = 'phase-card';
+
+      var lbl = document.createElement('div');
+      lbl.className = 'phase-label';
+      lbl.textContent = phase.label;
+      phaseDiv.appendChild(lbl);
+
+      var canvas = document.createElement('canvas');
+      canvas.className = 'pose-canvas';
+      phaseDiv.appendChild(canvas);
+
+      var phaseData = coaching && coaching[phase.key];
+      var corrections = phaseData ? (phaseData.corrections || []) : [];
+      var comment    = phaseData ? (phaseData.comment || '') : '';
+
+      if (frame && frame.base64) {
+        drawPoseCanvas(canvas, frame.base64, frame.landmarks || [], corrections);
+      } else {
+        canvas.width = 200; canvas.height = 150;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, 200, 150);
+        ctx.fillStyle = '#666';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('이미지 없음', 100, 75);
+      }
+
+      if (corrections.length > 0) {
+        var badDiv = document.createElement('div');
+        badDiv.className = 'correction-list';
+        corrections.forEach(function (c) {
+          var chip = document.createElement('span');
+          chip.className = 'correction-chip';
+          chip.textContent = '🔴 ' + (c.comment || c.joint);
+          badDiv.appendChild(chip);
+        });
+        phaseDiv.appendChild(badDiv);
+      }
+
+      if (comment) {
+        var commentEl = document.createElement('p');
+        commentEl.className = 'phase-comment';
+        commentEl.textContent = comment;
+        phaseDiv.appendChild(commentEl);
+      }
+
+      framesRow.appendChild(phaseDiv);
+    });
+
+    swingDiv.appendChild(framesRow);
+
+    /* 오늘의 핵심 과제 */
+    if (coaching && coaching.today_focus) {
+      var focusDiv = document.createElement('div');
+      focusDiv.className = 'focus-card';
+      focusDiv.innerHTML =
+        '<div class="focus-icon">🎯</div>' +
+        '<div class="focus-label">오늘의 핵심 과제</div>' +
+        '<div class="focus-text">' + coaching.today_focus + '</div>';
+      swingDiv.appendChild(focusDiv);
+    }
+
+    /* 추천 드릴 */
+    if (coaching && coaching.drill) {
+      var d = coaching.drill;
+      var drillDiv = document.createElement('div');
+      drillDiv.className = 'drill-card';
+      drillDiv.innerHTML =
+        '<div class="drill-title">📋 ' + (d.name || '추천 드릴') + '</div>' +
+        '<div class="drill-method">' + (d.method || '') + '</div>' +
+        (d.reps ? '<div class="drill-reps">⏱ ' + d.reps + '</div>' : '');
+      swingDiv.appendChild(drillDiv);
+    }
+
+    /* JSON 파싱 실패 시 폴백 (원문 텍스트) */
+    if (!coaching && item.coaching) {
+      var fallback = document.createElement('div');
+      fallback.className = 'result-card';
+      fallback.innerHTML = '<div class="coaching-body">' + escapeHtml(item.coaching) + '</div>';
+      swingDiv.appendChild(fallback);
+    }
+
+    wrap.appendChild(swingDiv);
   });
 }
 
-function formatCoaching(text) {
-  if (!text) return '';
-  return text
-    .replace(/## (.+)/g, '<h4>$1</h4>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^- (.+)/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/\n/g, '<br>');
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 /* ================================================================

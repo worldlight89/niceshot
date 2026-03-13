@@ -512,3 +512,141 @@ html, body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ─── 포즈 시각화 결과 화면 ──────────────────── */
+.swing-section {
+  margin-bottom: 28px;
+}
+
+.swing-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #2d6a4f;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e0ece6;
+}
+
+/* 3장 프레임 가로 스크롤 */
+.frames-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+}
+
+.frames-row::-webkit-scrollbar { height: 4px; }
+.frames-row::-webkit-scrollbar-track { background: #eee; border-radius: 2px; }
+.frames-row::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 2px; }
+
+.phase-card {
+  flex: 0 0 78vw;
+  max-width: 320px;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  scroll-snap-align: start;
+}
+
+.phase-label {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 7px 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pose-canvas {
+  width: 100%;
+  display: block;
+  background: #111;
+}
+
+.correction-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 6px;
+}
+
+.correction-chip {
+  background: #fff0f0;
+  border: 1px solid #ffb3b3;
+  color: #c0392b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  line-height: 1.4;
+}
+
+.phase-comment {
+  font-size: 0.85rem;
+  color: #444;
+  padding: 8px 14px 14px;
+  line-height: 1.55;
+}
+
+/* 오늘의 핵심 과제 */
+.focus-card {
+  background: linear-gradient(135deg, #2d6a4f, #1a4035);
+  color: #fff;
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.focus-icon {
+  font-size: 2rem;
+  margin-bottom: 6px;
+}
+
+.focus-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.focus-text {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* 추천 드릴 카드 */
+.drill-card {
+  background: #f8faf9;
+  border: 1.5px solid #c8dfd4;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-top: 12px;
+}
+
+.drill-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #2d6a4f;
+  margin-bottom: 10px;
+}
+
+.drill-method {
+  font-size: 0.88rem;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.drill-reps {
+  font-size: 0.82rem;
+  color: #666;
+  font-weight: 600;
+}

@@ -77,64 +77,65 @@ def _build_client():
     return None, None
 
 
-# ─── 프로 골프 코치 프롬프트 ─────────────────────────────────────────
+# ─── 프로 골프 코치 프롬프트 (JSON 구조 응답) ────────────────────────
 def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
-    addr_m = json.dumps(metrics.get("address", {}), ensure_ascii=False, indent=2)
-    top_m  = json.dumps(metrics.get("top",     {}), ensure_ascii=False, indent=2)
-    imp_m  = json.dumps(metrics.get("impact",  {}), ensure_ascii=False, indent=2)
+    addr_m = json.dumps(metrics.get("address", {}), ensure_ascii=False)
+    top_m  = json.dumps(metrics.get("top",     {}), ensure_ascii=False)
+    imp_m  = json.dumps(metrics.get("impact",  {}), ensure_ascii=False)
 
     concern_line = f"\n[골퍼의 고민] {notes}" if notes else ""
     return f"""당신은 PGA 투어 출신의 20년 경력 골프 코치입니다.
-지금 아마추어 골퍼를 직접 레슨하는 것처럼, 따뜻하고 전문적인 어조로 분석해주세요.
+아마추어 골퍼를 직접 레슨하듯이 따뜻하고 구체적으로 분석해주세요.
 
-[클럽] {club or '미지정'}번{concern_line}
-[카메라 각도] 다운더라인(후방에서 타깃 방향으로 촬영)
+[클럽] {club or '미지정'}{concern_line}
 [스윙 번호] {clip_idx}번째
+[카메라 각도] 후방에서 타깃 방향으로 촬영
 
-위에 첨부한 3장의 사진(어드레스 → 백스윙 탑 → 임팩트)을 직접 보고,
-아래 MediaPipe 측정 수치를 참고하여 분석해주세요.
+첨부된 3장 사진(어드레스 → 백스윙 탑 → 임팩트)을 직접 보고,
+아래 MediaPipe 측정값을 참고하여 분석해주세요.
+사진을 우선시하고, 수치는 보조 참고만 사용하세요.
 
-[어드레스 측정값]
-{addr_m}
+[어드레스 측정값] {addr_m}
+[백스윙 탑 측정값] {top_m}
+[임팩트 측정값] {imp_m}
 
-[백스윙 탑 측정값]
-{top_m}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+반드시 아래 JSON 형식으로만 응답하세요. JSON 외 다른 텍스트는 절대 포함하지 마세요.
 
-[임팩트 측정값]
-{imp_m}
+joint 이름은 반드시 다음 목록에서만 선택:
+nose, left_shoulder, right_shoulder, left_elbow, right_elbow,
+left_wrist, right_wrist, left_hip, right_hip,
+left_knee, right_knee, left_ankle, right_ankle
 
-─────────────────────────────────────────
-다음 형식으로 한국어로 답변해주세요.
-수치가 이상하거나 포즈 감지가 불완전할 수 있으니, 사진을 우선으로 보고 수치는 참고만 하세요.
-레슨 현장처럼 구체적이고 실용적으로 설명해주세요.
+direction(교정 방향)은 반드시 다음 중 하나:
+up(위로), down(아래로), forward(앞으로), back(뒤로), left(왼쪽), right(오른쪽)
 
-## 전체 스윙 총평
-(2~3문장. 잘하고 있는 점을 먼저 말하고, 전반적인 인상을 전달하세요)
-
-## 어드레스 분석
-- **좋은 점:** 
-- **교정 포인트:** (원인과 교정 방향 함께)
-- **코치의 팁:** (레슨 현장에서 하는 말투로)
-
-## 백스윙 탑 분석
-- **좋은 점:** 
-- **교정 포인트:** 
-- **코치의 팁:** 
-
-## 임팩트 분석
-- **좋은 점:** 
-- **교정 포인트:** 
-- **코치의 팁:** 
-
-## 오늘의 핵심 과제
-(가장 우선순위가 높은 교정 포인트 1가지. 짧고 명확하게)
-
-## 추천 드릴
-- **이름:** 
-- **방법:** (단계별로 구체적으로)
-- **횟수:** 
-- **기대 효과:** 
-""".strip()
+{{
+  "address": {{
+    "corrections": [
+      {{"joint": "관절이름", "direction": "방향", "comment": "이 관절의 교정 이유 (한국어, 1문장)"}}
+    ],
+    "comment": "어드레스 전체 코멘트 (한국어, 1~2문장)"
+  }},
+  "top": {{
+    "corrections": [
+      {{"joint": "관절이름", "direction": "방향", "comment": "교정 이유"}}
+    ],
+    "comment": "백스윙 탑 전체 코멘트"
+  }},
+  "impact": {{
+    "corrections": [
+      {{"joint": "관절이름", "direction": "방향", "comment": "교정 이유"}}
+    ],
+    "comment": "임팩트 전체 코멘트"
+  }},
+  "today_focus": "오늘 딱 하나의 핵심 교정 과제 (짧고 명확하게, 레슨 현장 어조)",
+  "drill": {{
+    "name": "드릴 이름",
+    "method": "단계별 구체적인 방법",
+    "reps": "횟수 및 세트"
+  }}
+}}""".strip()
 
 
 # ─── 메인 함수 ───────────────────────────────────────────────────────
@@ -198,15 +199,18 @@ def coach_with_gemini(
         if not text:
             return _placeholder(clip_idx)
 
-        # 한 줄 요약 추출 (## 전체 스윙 총평 다음 줄)
-        lines = text.splitlines()
-        summary = ""
-        for i, ln in enumerate(lines):
-            if "총평" in ln and i + 1 < len(lines):
-                summary = lines[i + 1].strip()
-                break
-        if not summary:
-            summary = lines[0] if lines else f"스윙 {clip_idx} 분석 완료"
+        # ```json ... ``` 마크다운 블록 제거
+        import re as _re
+        text = _re.sub(r"```json\s*", "", text, flags=_re.IGNORECASE)
+        text = _re.sub(r"```\s*", "", text)
+        text = text.strip()
+
+        # JSON 파싱 검증 (프론트엔드에서도 파싱하지만 서버에서도 확인)
+        try:
+            parsed = json.loads(text)
+            summary = parsed.get("today_focus", f"스윙 {clip_idx} 분석 완료")
+        except Exception:
+            summary = f"스윙 {clip_idx} 분석 완료"
 
         return CoachingResult(coaching=text, summary=summary)
 
