@@ -25,7 +25,7 @@
       <h2 class="question">스윙 연습을<br>시작하시겠습니까?</h2>
       <div class="info-box">
         <p class="info-row">📱 폰을 세워두고 혼자서도 사용 가능</p>
-        <p class="info-row">🤖 AI가 클럽별 스윙 자세를 분석해 드립니다</p>
+        <p class="info-row">🤖 AI가 7구간 스윙 자세를 분석해 드립니다</p>
         <p class="info-row">🎤 음성 명령 지원 ("시작", "다시")</p>
       </div>
     </div>
@@ -36,22 +36,7 @@
   <div id="step2" class="step">
     <h2 class="question-top">몇 번 클럽으로<br>연습하실 건가요?</h2>
     <div class="club-grid" id="clubGrid"></div>
-    <button class="btn btn-primary" id="btnClubNext" onclick="goStep(3)" disabled>다음</button>
-  </div>
-
-  <!-- Step 3: 스윙 횟수 -->
-  <div id="step3" class="step">
-    <div class="center">
-      <h2 class="question">몇 번 스윙을<br>하실 건가요?</h2>
-      <div class="chip-row">
-        <button class="chip" onclick="selectCount(1,this)">1회</button>
-        <button class="chip" onclick="selectCount(2,this)">2회</button>
-        <button class="chip" onclick="selectCount(3,this)">3회</button>
-        <button class="chip" onclick="selectCount(4,this)">4회</button>
-        <button class="chip" onclick="selectCount(5,this)">5회</button>
-      </div>
-    </div>
-    <button class="btn btn-primary" id="btnCountNext" onclick="goStep(4)" disabled>다음</button>
+    <button class="btn btn-primary" id="btnClubNext" onclick="goStep(4)" disabled>다음</button>
   </div>
 
   <!-- Step 4: 고민 입력 -->
@@ -70,13 +55,11 @@
       <h2 class="question">연습 준비 완료</h2>
       <div class="summary-box">
         <p class="summary-row">클럽: <strong id="summaryClub">-</strong></p>
-        <p class="summary-row">스윙 횟수: <strong id="summaryCount">-</strong>회</p>
         <p class="summary-row" id="concernRow" style="display:none">고민: <span id="summaryConern" class="concern-text"></span></p>
       </div>
       <div class="info-box">
         <p class="info-row">📱 폰을 1.5~2m 앞에 세운 후 연습 시작을 눌러주세요</p>
-        <p class="info-row">🧍 전신이 화면에 들어오면 5초 후 자동으로 녹화 시작</p>
-        <p class="info-row">🔄 스윙 후 잠깐 나갔다 돌아오면 다음 스윙 자동 시작</p>
+        <p class="info-row">🧍 전신이 화면에 들어오면 자동으로 시작됩니다</p>
         <p class="info-row">🎤 "시작" 말하면 즉시 시작, "다시" 말하면 재녹화</p>
       </div>
     </div>
@@ -90,16 +73,12 @@
       <canvas id="poseOverlay"></canvas>
       <div class="frame-guide"></div>
       <div class="pill" id="framePill">전신이 프레임 안에 들어오게 서주세요</div>
-
-      <!-- 음성 인디케이터 -->
       <div class="voice-indicator" id="voiceIndicator">
         <span class="mic">🎤</span>
         <span id="voiceStatusText">음성 준비 중...</span>
       </div>
-      <!-- 들린 음성 표시 -->
       <div class="voice-heard" id="voiceHeard"></div>
     </div>
-
     <div class="camera-bar">
       <p id="cameraStatus">카메라 켜는 중...</p>
       <p id="camTip" class="cam-tip"></p>
@@ -110,33 +89,32 @@
   <div id="step7" class="step step-camera">
     <div class="video-wrap">
       <video id="recordVideo" autoplay playsinline muted></video>
-
       <div class="record-overlay">
         <p id="recordPhase" class="record-phase">준비 중</p>
         <p id="recordCountdown" class="record-countdown"></p>
       </div>
-
-      <!-- 스윙 사이 안내 -->
       <div class="between-guide" id="betweenGuide" style="display:none"></div>
-
-      <!-- 음성 인디케이터 -->
       <div class="voice-indicator" id="voiceIndicator2">
         <span class="mic">🎤</span>
         <span id="voiceStatusText2">음성 듣는 중</span>
       </div>
-      <!-- 들린 음성 표시 -->
       <div class="voice-heard" id="voiceHeard2"></div>
     </div>
   </div>
 
-  <!-- Step 8: 녹화 완료 -->
+  <!-- Step 8: 스윙 후 선택 -->
   <div id="step8" class="step">
     <div class="center">
-      <div class="icon-big">✅</div>
-      <h2 class="question">녹화 완료!</h2>
-      <p class="hint"><span id="clipCount">0</span>개 클립이 저장됐습니다</p>
+      <div class="icon-big">🏌️‍♂️</div>
+      <h2 class="question">스윙 완료!</h2>
+      <p class="hint" id="postSwingHint">AI 코칭을 바로 받으시겠습니까?<br>한 타 더 연습 후 받으시겠습니까?</p>
+      <div class="voice-indicator" id="voiceIndicatorPost" style="position:relative;margin:16px auto 0;pointer-events:auto">
+        <span class="mic">🎤</span>
+        <span id="voiceStatusPost">"분석" 또는 "한번 더" 라고 말해보세요</span>
+      </div>
     </div>
-    <button class="btn btn-primary" onclick="uploadAndAnalyze()">🤖 AI 코칭 받기</button>
+    <button class="btn btn-primary" onclick="uploadAndAnalyze()">🤖 바로 분석하기</button>
+    <button class="btn btn-outline" onclick="practiceAgain()">🔄 한 번 더 연습 후 분석</button>
   </div>
 
   <!-- Step 9: 결과 -->
@@ -151,19 +129,20 @@
   <script src="app.js"></script>
 
   <script>
-    // Step 7 음성 인디케이터도 app.js의 setVoiceStatus와 동기화
     var _origSetVoice = window.setVoiceStatus;
     window.setVoiceStatus = function(s) {
       if (_origSetVoice) _origSetVoice(s);
       var ind2 = document.getElementById('voiceIndicator2');
       var txt2 = document.getElementById('voiceStatusText2');
-      if (!ind2) return;
-      if (s === 'on') {
-        ind2.classList.add('listening');
-        if (txt2) txt2.textContent = '음성 듣는 중 — "시작" / "다시"';
-      } else {
-        ind2.classList.remove('listening');
-        if (txt2) txt2.textContent = '음성 인식 꺼짐';
+      if (ind2) {
+        if (s === 'on') { ind2.classList.add('listening'); if (txt2) txt2.textContent = '음성 듣는 중 — "시작" / "다시"'; }
+        else { ind2.classList.remove('listening'); if (txt2) txt2.textContent = '음성 인식 꺼짐'; }
+      }
+      var indPost = document.getElementById('voiceIndicatorPost');
+      var txtPost = document.getElementById('voiceStatusPost');
+      if (indPost) {
+        if (s === 'on') { indPost.classList.add('listening'); if (txtPost) txtPost.textContent = '"분석" 또는 "한번 더" 라고 말해보세요'; }
+        else { indPost.classList.remove('listening'); }
       }
     };
     window.showVoiceHeard = function(text) {

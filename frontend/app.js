@@ -87,20 +87,24 @@ function skipConcern() {
   var inp = document.getElementById('concernInput');
   if (inp) inp.value = '';
   state.concern = '';
+  _updateSummary();
+  goStep(5);
 }
 
 function confirmConcern() {
   var inp = document.getElementById('concernInput');
   state.concern = inp ? inp.value.trim() : '';
+  _updateSummary();
+  goStep(5);
+}
+
+function _updateSummary() {
   var sc = document.getElementById('summaryClub');
-  var sn = document.getElementById('summaryCount');
   var sp = document.getElementById('summaryConern');
   var cr = document.getElementById('concernRow');
   if (sc) sc.textContent = state.club || '-';
-  if (sn) sn.textContent = state.swingCount || '-';
   if (sp) sp.textContent = state.concern;
   if (cr) cr.style.display = state.concern ? '' : 'none';
-  goStep(5);
 }
 
 /* ================================================================
@@ -125,6 +129,7 @@ function openCamera() {
     var vid = document.getElementById('previewVideo');
     if (vid) { vid.srcObject = stream; vid.play(); }
     setCamStatus('🧍 전신이 프레임에 들어오면 자동으로 시작됩니다');
+    playCameraReadyBeep();
     setTimeout(initPose, 800);
   }).catch(function (err) {
     setCamStatus('카메라 오류: ' + err.message);
@@ -223,17 +228,31 @@ function kickoffFirstSwing() {
   startNextSwingCountdown();
 }
 
+var KO_COUNTS = ['다섯', '넷', '셋', '둘', '하나'];
+
 function startNextSwingCountdown() {
   var phase = document.getElementById('recordPhase');
   var countdown = document.getElementById('recordCountdown');
-  if (phase) phase.textContent = (currentSwingIndex + 1) + '번째 스윙 준비';
+  if (phase) phase.textContent = '스윙 준비';
   if (countdown) countdown.textContent = '';
-  var n = 5;
+  var n = 0;
   var t = setInterval(function () {
-    playBeep(); if (countdown) countdown.textContent = n; n--;
-    if (n < 0) { clearInterval(t); if (countdown) countdown.textContent = ''; captureSwing(); }
+    if (n < KO_COUNTS.length) {
+      speak(KO_COUNTS[n]);
+      playBeep();
+      if (countdown) countdown.textContent = 5 - n;
+      n++;
+    } else {
+      clearInterval(t);
+      if (countdown) countdown.textContent = '';
+      captureSwing();
+    }
   }, 1000);
 }
+
+/* 7구간 프레임 캡처 타이밍 (녹화 시작 후 ms) */
+var SNAP_TIMES  = [300, 900, 1700, 2200, 2800, 3500, 4800];
+var SNAP_LABELS = ['어드레스', '테이크어웨이', '백스윙 탑', '트랜지션', '임팩트', '팔로스루', '피니시'];
 
 function captureSwing() {
   var phase = document.getElementById('recordPhase');
@@ -246,10 +265,7 @@ function captureSwing() {
   try { recorder = new MediaRecorder(mediaStream, mimeType ? { mimeType: mimeType } : {}); }
   catch (e) { recorder = new MediaRecorder(mediaStream); }
 
-  /* ── 3장 프레임 캡처: 어드레스(0.6s), 백스윙탑(2.2s), 임팩트(4.0s) ── */
-  var rawFrames = [null, null, null];
-  var SNAP_TIMES = [600, 2200, 4000];
-  var SNAP_LABELS = ['어드레스', '백스윙 탑', '임팩트'];
+  var rawFrames = new Array(SNAP_TIMES.length).fill(null);
 
   SNAP_TIMES.forEach(function (delay, i) {
     setTimeout(function () {
@@ -264,31 +280,37 @@ function captureSwing() {
 
   recorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) chunks.push(e.data); };
   recorder.start(200);
-  setTimeout(function () { recorder.stop(); }, 8000);
+  /* 6초 녹화 */
+  setTimeout(function () { recorder.stop(); }, 6000);
 
   recorder.onstop = function () {
     var blob = new Blob(chunks, { type: mimeType || 'video/webm' });
     state.clips.push(blob);
     currentSwingIndex++;
 
-    /* 캡처된 프레임에 포즈 분석 적용 후 저장 */
     analyzeFramesWithPose(rawFrames, function (analyzed) {
       state.swingFrames.push(analyzed);
-
-      if (currentSwingIndex >= state.swingCount) {
-        finishRecording();
-      } else {
-        betweenState = 'wait_exit'; noPersonFrames = 0;
-        poseRunning = true; requestAnimationFrame(poseLoop);
-        if (phase) phase.textContent = '✅ ' + currentSwingIndex + '번째 완료!';
-        setRecordGuide(
-          '프레임에서 나갔다가 다시 들어오면\n' +
-          (currentSwingIndex + 1) + '번째 스윙이 자동 시작됩니다\n🎤 "시작" 이라고 말해도 됩니다'
-        );
-        speak(currentSwingIndex + '번째 완료. 나갔다 다시 들어오시면 바로 시작합니다.');
-      }
+      showPostSwingScreen();
     });
   };
+}
+
+/* 스윙 완료 후 선택 화면 */
+function showPostSwingScreen() {
+  poseRunning = false;
+  goStep(8);
+  speak('스윙이 완료됐습니다. 바로 코칭 분석을 받으시겠습니까? 아니면 한 타 더 연습 후 코칭 받으시겠습니까?');
+  startVoiceRecognition();
+}
+
+/* 한 번 더 연습 후 분석 */
+function practiceAgain() {
+  stopVoiceRecognition();
+  goStep(7);
+  betweenState = 'idle';
+  poseRunning = false;
+  setRecordGuide('');
+  setTimeout(startNextSwingCountdown, 800);
 }
 
 /* ── 3장 프레임에 MediaPipe 포즈 분석 적용 ── */
@@ -411,17 +433,7 @@ function voiceTriggerRedo() {
   setTimeout(startNextSwingCountdown, 1500);
 }
 
-/* ================================================================
-   녹화 완료
-   ================================================================ */
-function finishRecording() {
-  poseRunning = false; betweenState = 'idle';
-  if (mediaStream) mediaStream.getTracks().forEach(function (t) { t.stop(); });
-  speak('모든 스윙 녹화가 완료됐습니다. AI 코칭 받기 버튼을 눌러주세요.');
-  goStep(8);
-  var cc = document.getElementById('clipCount');
-  if (cc) cc.textContent = state.clips.length;
-}
+/* finishRecording 은 showPostSwingScreen 으로 대체됨 */
 
 function pickMimeType() {
   var types = ['video/mp4;codecs=h264', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
@@ -434,6 +446,11 @@ function pickMimeType() {
 /* ================================================================
    AI 분석 업로드 (이미지 + 수치 전송)
    ================================================================ */
+function isPostSwingActive() {
+  var s8 = document.getElementById('step8');
+  return s8 && s8.classList.contains('active');
+}
+
 function uploadAndAnalyze() {
   stopVoiceRecognition();
   goStep(9);
@@ -617,9 +634,13 @@ function showResults(data) {
 
     /* 3장 프레임 행 */
     var phases = [
-      { key: 'address', label: '어드레스',  frameLabel: '어드레스' },
-      { key: 'top',     label: '백스윙 탑', frameLabel: '백스윙 탑' },
-      { key: 'impact',  label: '임팩트',    frameLabel: '임팩트' }
+      { key: 'address',       label: '어드레스',    frameLabel: '어드레스' },
+      { key: 'takeaway',      label: '테이크어웨이', frameLabel: '테이크어웨이' },
+      { key: 'top',           label: '백스윙 탑',   frameLabel: '백스윙 탑' },
+      { key: 'transition',    label: '트랜지션',    frameLabel: '트랜지션' },
+      { key: 'impact',        label: '임팩트',      frameLabel: '임팩트' },
+      { key: 'followthrough', label: '팔로스루',    frameLabel: '팔로스루' },
+      { key: 'finish',        label: '피니시',      frameLabel: '피니시' }
     ];
 
     var framesRow = document.createElement('div');
@@ -761,8 +782,12 @@ function startVoiceRecognition() {
   voiceRecognition.onstart = function () { voiceActive = true; setVoiceStatus('on'); };
   voiceRecognition.onend = function () {
     voiceActive = false;
-    var s7 = document.getElementById('step7'), s6 = document.getElementById('step6');
-    var active = (s7 && s7.classList.contains('active')) || (s6 && s6.classList.contains('active'));
+    var s7 = document.getElementById('step7');
+    var s6 = document.getElementById('step6');
+    var s8 = document.getElementById('step8');
+    var active = (s7 && s7.classList.contains('active')) ||
+                 (s6 && s6.classList.contains('active')) ||
+                 (s8 && s8.classList.contains('active'));
     if (active) setTimeout(startVoiceRecognition, 500);
     else setVoiceStatus('off');
   };
@@ -772,8 +797,14 @@ function startVoiceRecognition() {
     if (!last.isFinal) return;
     var text = last[0].transcript.trim();
     showVoiceHeard(text);
+    /* 녹화 중 음성 */
     if (text.indexOf('시작') >= 0) voiceTriggerStart();
-    if (text.indexOf('다시') >= 0) voiceTriggerRedo();
+    if (text.indexOf('다시') >= 0 && !isPostSwingActive()) voiceTriggerRedo();
+    /* 포스트스윙 선택 음성 */
+    if (isPostSwingActive()) {
+      if (text.indexOf('분석') >= 0) uploadAndAnalyze();
+      else if (text.indexOf('더') >= 0 || text.indexOf('한번') >= 0 || text.indexOf('한 번') >= 0) practiceAgain();
+    }
   };
   try { voiceRecognition.start(); } catch (e) {}
 }
@@ -848,6 +879,22 @@ function playBeepLong() {
     g.gain.setValueAtTime(0.4, ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
     o.start(); o.stop(ctx.currentTime + 0.55); o.onended = function () { ctx.close(); };
+  } catch (e) {}
+}
+/* 카메라 준비 완료 — 크고 명확한 3연타 비프 */
+function playCameraReadyBeep() {
+  try {
+    var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    var ctx = new C();
+    [523, 659, 880].forEach(function (f, i) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      var t = ctx.currentTime + i * 0.22;
+      g.gain.setValueAtTime(0.8, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      o.start(t); o.stop(t + 0.42);
+    });
+    setTimeout(function () { ctx.close(); }, 1500);
   } catch (e) {}
 }
 function speak(text) {

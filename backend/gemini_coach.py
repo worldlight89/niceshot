@@ -85,7 +85,7 @@ def _build_client():
     return None, None
 
 
-# ─── 프로 골프 코치 프롬프트 (JSON 구조 응답) ────────────────────────
+# ─── 프로 골프 코치 프롬프트 (7구간 JSON 응답) ───────────────────────
 def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
     addr_m = json.dumps(metrics.get("address", {}), ensure_ascii=False)
     top_m  = json.dumps(metrics.get("top",     {}), ensure_ascii=False)
@@ -93,56 +93,33 @@ def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
 
     concern_line = f"\n[골퍼의 고민] {notes}" if notes else ""
     return f"""당신은 PGA 투어 출신의 20년 경력 골프 코치입니다.
-아마추어 골퍼를 직접 레슨하듯이 따뜻하고 구체적으로 분석해주세요.
 
 [클럽] {club or '미지정'}{concern_line}
-[스윙 번호] {clip_idx}번째
-[카메라 각도] 후방에서 타깃 방향으로 촬영
+[카메라] 후방에서 타깃 방향 촬영
 
-첨부된 3장 사진(어드레스 → 백스윙 탑 → 임팩트)을 직접 보고,
-아래 MediaPipe 측정값을 참고하여 분석해주세요.
-사진을 우선시하고, 수치는 보조 참고만 사용하세요.
-
-[어드레스 측정값] {addr_m}
-[백스윙 탑 측정값] {top_m}
-[임팩트 측정값] {imp_m}
+첨부된 7장 사진(어드레스→테이크어웨이→백스윙탑→트랜지션→임팩트→팔로스루→피니시)을 분석하세요.
+사진 우선, 아래 측정값은 참고용:
+[어드레스] {addr_m}  [백스윙탑] {top_m}  [임팩트] {imp_m}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-반드시 아래 JSON 형식으로만 응답하세요. JSON 외 다른 텍스트는 절대 포함하지 마세요.
+⚠️ 반드시 아래 JSON 형식으로만 응답. JSON 외 텍스트 절대 금지.
 
-joint 이름은 반드시 다음 목록에서만 선택:
-nose, left_shoulder, right_shoulder, left_elbow, right_elbow,
-left_wrist, right_wrist, left_hip, right_hip,
-left_knee, right_knee, left_ankle, right_ankle
-
-direction(교정 방향)은 반드시 다음 중 하나:
-up(위로), down(아래로), forward(앞으로), back(뒤로), left(왼쪽), right(오른쪽)
+규칙:
+- corrections: 실제 문제 있는 관절만 포함 (문제없으면 빈 배열)
+- comment: 핵심 1문장만 (짧고 명확하게)
+- joint: left_shoulder/right_shoulder/left_elbow/right_elbow/left_wrist/right_wrist/left_hip/right_hip/left_knee/right_knee/left_ankle/right_ankle 중 선택
+- direction: up/down/forward/back/left/right 중 선택
 
 {{
-  "address": {{
-    "corrections": [
-      {{"joint": "관절이름", "direction": "방향", "comment": "이 관절의 교정 이유 (한국어, 1문장)"}}
-    ],
-    "comment": "어드레스 전체 코멘트 (한국어, 1~2문장)"
-  }},
-  "top": {{
-    "corrections": [
-      {{"joint": "관절이름", "direction": "방향", "comment": "교정 이유"}}
-    ],
-    "comment": "백스윙 탑 전체 코멘트"
-  }},
-  "impact": {{
-    "corrections": [
-      {{"joint": "관절이름", "direction": "방향", "comment": "교정 이유"}}
-    ],
-    "comment": "임팩트 전체 코멘트"
-  }},
-  "today_focus": "오늘 딱 하나의 핵심 교정 과제 (짧고 명확하게, 레슨 현장 어조)",
-  "drill": {{
-    "name": "드릴 이름",
-    "method": "단계별 구체적인 방법",
-    "reps": "횟수 및 세트"
-  }}
+  "address":       {{"corrections": [{{"joint":"관절","direction":"방향","comment":"1문장"}}], "comment":"1문장"}},
+  "takeaway":      {{"corrections": [], "comment":"1문장"}},
+  "top":           {{"corrections": [], "comment":"1문장"}},
+  "transition":    {{"corrections": [], "comment":"1문장"}},
+  "impact":        {{"corrections": [], "comment":"1문장"}},
+  "followthrough": {{"corrections": [], "comment":"1문장"}},
+  "finish":        {{"corrections": [], "comment":"1문장"}},
+  "today_focus": "오늘 딱 하나의 핵심 교정 (15자 이내)",
+  "drill": {{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}
 }}""".strip()
 
 
@@ -173,9 +150,13 @@ def coach_with_gemini(
     # ── 멀티모달 파트 구성 ──
     parts = []
     frame_keys = [
-        ("address", "어드레스"),
-        ("top",     "백스윙 탑"),
-        ("impact",  "임팩트"),
+        ("address",       "어드레스"),
+        ("takeaway",      "테이크어웨이"),
+        ("top",           "백스윙 탑"),
+        ("transition",    "트랜지션"),
+        ("impact",        "임팩트"),
+        ("followthrough", "팔로스루"),
+        ("finish",        "피니시"),
     ]
     metrics_by_phase: dict[str, dict] = {}
 
