@@ -3,86 +3,47 @@ from __future__ import annotations
 import base64
 import json
 import os
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass
 from typing import Any
 
 
 @dataclass
 class CoachingResult:
-    coaching: str          # 전체 코칭 텍스트 (마크다운)
-    summary: str = ""      # 한 줄 요약
+    coaching: str
+    summary: str = ""
 
 
-# ─── 플레이스홀더 (Vertex/Gemini 미설정 시) ──────────────────────────
 def _placeholder(clip_idx: int) -> CoachingResult:
     return CoachingResult(
         summary=f"[클립 {clip_idx}] 데모 피드백",
-        coaching=f"""## 전체 스윙 총평
-리듬이 안정적이고, 피니시까지 마무리하려는 의도가 좋습니다. 몇 가지 교정 포인트를 짚어드릴게요.
-
-## 어드레스 분석
-- **좋은 점:** 그립과 스탠스 너비가 안정적으로 보입니다.
-- **교정 포인트:** 왼쪽 어깨가 목표 방향으로 조금 열려 있습니다. 양 발 너비를 어깨 너비로 맞추고, 볼 위치를 왼쪽 귀 아래에 세팅하세요.
-- **코치의 팁:** 셋업 시 클럽 헤드를 먼저 타깃 라인에 맞추고, 그 다음에 몸을 맞추는 루틴을 만들어보세요.
-
-## 백스윙 탑 분석
-- **좋은 점:** 백스윙 방향이 타깃 라인과 대체로 평행합니다.
-- **교정 포인트:** 다운스윙에서 상체가 먼저 열리는 경향이 있습니다. 하체(왼쪽 무릎)가 먼저 타깃 쪽으로 이동하며 리드하는 느낌을 연습해보세요.
-- **코치의 팁:** "왼 무릎이 먼저 목표 쪽으로" 라고 스스로 말하며 스윙하면 도움이 됩니다.
-
-## 임팩트 분석
-- **좋은 점:** 임팩트 시 머리가 볼 뒤에 잘 유지되고 있습니다.
-- **교정 포인트:** 임팩트 직전 손목(캐스팅)이 일찍 풀리고 있습니다. 임팩트 존에서 손목 각도를 최대한 늦게 릴리즈하세요.
-- **코치의 팁:** 9-3 하프스윙으로 임팩트 위치에서 멈추는 연습을 하면 손목 캐스팅 교정에 효과적입니다.
-
-## 오늘의 핵심 과제
-**하체 리드 느낌 만들기** — 백스윙 후 왼 무릎이 먼저 목표 방향으로 이동하는 느낌을 몸에 익히세요.
-
-## 추천 드릴
-- **이름:** 9-3 하프스윙 + 멈춤
-- **방법:** 백스윙 9시 → 다운스윙 → 임팩트에서 1초 멈추고 손목 위치 확인 → 폴로스루 3시까지
-- **횟수:** 10회 연속, 하루 3세트
-- **기대 효과:** 임팩트 포지션 각인, 손목 캐스팅 교정
-
-⚙️ *현재 Gemini API가 설정되지 않아 데모 피드백이 표시됩니다. 백엔드에 GEMINI_API_KEY 또는 VERTEX_PROJECT_ID를 설정하면 실제 분석이 제공됩니다.*
-""",
+        coaching='{"address":{"corrections":[],"comment":"데모 모드"},"takeaway":{"corrections":[],"comment":"데모"},"top":{"corrections":[],"comment":"데모"},"transition":{"corrections":[],"comment":"데모"},"impact":{"corrections":[],"comment":"데모"},"followthrough":{"corrections":[],"comment":"데모"},"finish":{"corrections":[],"comment":"데모"},"today_focus":"Gemini 연결 후 실제 분석 제공","drill":{"name":"셋업","method":"데모","reps":"10회"}}',
     )
 
 
-# ─── Gemini 클라이언트 초기화 ────────────────────────────────────────
-_client_error: str = ""   # 전역 에러 메시지 저장
+# ─── Vertex AI 초기화 ────────────────────────────────────────────────
+_init_done = False
+_init_error = ""
 
-def _build_client():
-    global _client_error
+def _ensure_vertexai():
+    global _init_done, _init_error
+    if _init_done:
+        return _init_error == ""
+    _init_done = True
     try:
-        from google import genai  # type: ignore
-    except Exception as e:
-        _client_error = f"google-genai 패키지 임포트 실패: {e}"
-        return None, None
-
-    vertex_project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
-    if vertex_project:
+        import vertexai
+        project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
         location = os.environ.get("VERTEX_LOCATION", "us-central1").strip() or "us-central1"
-        model = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-        try:
-            client = genai.Client(vertexai=True, project=vertex_project, location=location)
-            return client, model
-        except Exception as e:
-            _client_error = f"Vertex AI 클라이언트 초기화 실패: {type(e).__name__}: {e}"
-            return None, None
-
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if api_key:
-        model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-        try:
-            client = genai.Client(api_key=api_key)
-            return client, model
-        except Exception as e:
-            _client_error = f"Gemini API Key 클라이언트 실패: {type(e).__name__}: {e}"
-            return None, None
-
-    _client_error = "VERTEX_PROJECT_ID 또는 GEMINI_API_KEY 환경변수 없음"
-    return None, None
+        if not project:
+            _init_error = "VERTEX_PROJECT_ID 환경변수 없음"
+            return False
+        vertexai.init(project=project, location=location)
+        print(f"[Vertex AI] Initialized: project={project}, location={location}")
+        return True
+    except Exception as e:
+        _init_error = f"Vertex AI init 실패: {type(e).__name__}: {e}"
+        print(f"[Vertex AI] {_init_error}")
+        return False
 
 
 # ─── 프로 골프 코치 프롬프트 (7구간 JSON 응답) ───────────────────────
@@ -110,45 +71,43 @@ def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
 - joint: left_shoulder/right_shoulder/left_elbow/right_elbow/left_wrist/right_wrist/left_hip/right_hip/left_knee/right_knee/left_ankle/right_ankle 중 선택
 - direction: up/down/forward/back/left/right 중 선택
 
-{{
-  "address":       {{"corrections": [{{"joint":"관절","direction":"방향","comment":"1문장"}}], "comment":"1문장"}},
-  "takeaway":      {{"corrections": [], "comment":"1문장"}},
-  "top":           {{"corrections": [], "comment":"1문장"}},
-  "transition":    {{"corrections": [], "comment":"1문장"}},
-  "impact":        {{"corrections": [], "comment":"1문장"}},
-  "followthrough": {{"corrections": [], "comment":"1문장"}},
-  "finish":        {{"corrections": [], "comment":"1문장"}},
+{{{{
+  "address":       {{{{"corrections": [{{{{"joint":"관절","direction":"방향","comment":"1문장"}}}}], "comment":"1문장"}}}},
+  "takeaway":      {{{{"corrections": [], "comment":"1문장"}}}},
+  "top":           {{{{"corrections": [], "comment":"1문장"}}}},
+  "transition":    {{{{"corrections": [], "comment":"1문장"}}}},
+  "impact":        {{{{"corrections": [], "comment":"1문장"}}}},
+  "followthrough": {{{{"corrections": [], "comment":"1문장"}}}},
+  "finish":        {{{{"corrections": [], "comment":"1문장"}}}},
   "today_focus": "오늘 딱 하나의 핵심 교정 (15자 이내)",
-  "drill": {{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}
-}}""".strip()
+  "drill": {{{{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}}}
+}}}}""".strip()
 
 
 # ─── 메인 함수 ───────────────────────────────────────────────────────
 def coach_with_gemini(
     *,
     clip_idx: int,
-    frames: dict[str, Any],   # {"address": {"base64": ..., "metrics": ...}, "top": ..., "impact": ...}
+    frames: dict[str, Any],
     notes: str = "",
     club: str = "",
 ) -> CoachingResult:
-    """
-    프레임 이미지(base64) + 포즈 수치를 Gemini 멀티모달로 전달해 프로 코칭 반환.
-    설정 없으면 플레이스홀더 반환.
-    """
-    client, model = _build_client()
-    if not client or not model:
+    if not _ensure_vertexai():
         ph = _placeholder(clip_idx)
-        if _client_error:
-            ph.coaching = f"## Gemini 연결 실패\n\n**원인:** {_client_error}\n\n---\n\n" + ph.coaching
+        ph.coaching = f'{{"address":{{"corrections":[],"comment":"Vertex AI 연결 실패: {_init_error}"}},"takeaway":{{"corrections":[],"comment":""}},"top":{{"corrections":[],"comment":""}},"transition":{{"corrections":[],"comment":""}},"impact":{{"corrections":[],"comment":""}},"followthrough":{{"corrections":[],"comment":""}},"finish":{{"corrections":[],"comment":""}},"today_focus":"{_init_error}","drill":{{"name":"","method":"","reps":""}}}}'
         return ph
 
     try:
-        from google.genai import types  # type: ignore
-    except Exception:
-        return _placeholder(clip_idx)
+        from vertexai.generative_models import GenerativeModel, Part, Image
+    except ImportError as e:
+        ph = _placeholder(clip_idx)
+        ph.summary = f"import 실패: {e}"
+        return ph
+
+    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
 
     # ── 멀티모달 파트 구성 ──
-    parts = []
+    content_parts = []
     frame_keys = [
         ("address",       "어드레스"),
         ("takeaway",      "테이크어웨이"),
@@ -166,38 +125,31 @@ def coach_with_gemini(
         metrics_by_phase[key] = frame_data.get("metrics", {}) if isinstance(frame_data, dict) else {}
 
         if b64:
-            # data URL prefix 제거
             raw = b64.split(",")[-1] if "," in b64 else b64
             try:
                 image_bytes = base64.b64decode(raw)
-                parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
-                parts.append(types.Part.from_text(text=f"[{label} 프레임]"))
+                content_parts.append(Part.from_image(Image.from_bytes(image_bytes)))
+                content_parts.append(Part.from_text(f"[{label} 프레임]"))
             except Exception:
-                pass  # 이미지 디코딩 실패 시 텍스트만
+                pass
 
-    # 텍스트 프롬프트 추가
     prompt = _build_prompt(clip_idx, club, notes, metrics_by_phase)
-    parts.append(types.Part.from_text(text=prompt))
+    content_parts.append(Part.from_text(prompt))
 
-    if not parts:
+    if not content_parts:
         return _placeholder(clip_idx)
 
     try:
-        resp = client.models.generate_content(
-            model=model,
-            contents=types.Content(role="user", parts=parts),
-        )
+        model = GenerativeModel(model_name)
+        resp = model.generate_content(content_parts)
         text = (resp.text or "").strip()
         if not text:
             return _placeholder(clip_idx)
 
-        # ```json ... ``` 마크다운 블록 제거
-        import re as _re
-        text = _re.sub(r"```json\s*", "", text, flags=_re.IGNORECASE)
-        text = _re.sub(r"```\s*", "", text)
+        text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"```\s*", "", text)
         text = text.strip()
 
-        # JSON 파싱 검증 (프론트엔드에서도 파싱하지만 서버에서도 확인)
         try:
             parsed = json.loads(text)
             summary = parsed.get("today_focus", f"스윙 {clip_idx} 분석 완료")
@@ -210,9 +162,13 @@ def coach_with_gemini(
         err_type = type(e).__name__
         ph = _placeholder(clip_idx)
         ph.coaching = (
-            f"## Gemini 호출 오류\n\n"
-            f"**오류 유형:** {err_type}\n\n"
-            f"**내용:** {str(e)}\n\n"
-            "---\n\n" + ph.coaching
+            f'{{"address":{{"corrections":[],"comment":"Gemini 호출 오류: {err_type}: {str(e)[:200]}"}}'
+            f',"takeaway":{{"corrections":[],"comment":""}}'
+            f',"top":{{"corrections":[],"comment":""}}'
+            f',"transition":{{"corrections":[],"comment":""}}'
+            f',"impact":{{"corrections":[],"comment":""}}'
+            f',"followthrough":{{"corrections":[],"comment":""}}'
+            f',"finish":{{"corrections":[],"comment":""}}'
+            f',"today_focus":"오류 발생","drill":{{"name":"","method":"","reps":""}}}}'
         )
         return ph
