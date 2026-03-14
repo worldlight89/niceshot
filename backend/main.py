@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 from typing import Any
 
-# .env 파일 자동 로드
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("niceshot")
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
 
-# Railway: GOOGLE_APPLICATION_CREDENTIALS_JSON → 임시 파일로 저장
 import tempfile
 _sa_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
 if _sa_json:
@@ -20,9 +26,9 @@ if _sa_json:
         with os.fdopen(_fd, "w", encoding="utf-8") as _f:
             _f.write(_sa_json)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmppath
-        print(f"[SA] Credentials written to {_tmppath} ({len(_sa_json)} chars)")
+        log.info("SA credentials written to %s (%d chars)", _tmppath, len(_sa_json))
     except Exception as _e:
-        print(f"[SA] Failed to write credentials: {_e}")
+        log.error("Failed to write SA credentials: %s", _e)
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -136,7 +142,10 @@ async def analyze(
     club: str = Form(default=""),
 ) -> dict[str, Any]:
     """영상 + MediaPipe 메트릭 → 규칙엔진(점수/교정) + Gemini(코멘트)."""
+    t0 = time.time()
+
     if not clips:
+        log.warning("analyze called with no clips")
         return {"error": "No video provided", "coaching": "", "summary": ""}
 
     video_bytes = await clips[0].read()
@@ -147,12 +156,19 @@ async def analyze(
     try:
         metrics = json.loads(metrics_json) if metrics_json else {}
     except Exception:
+        log.warning("Invalid metrics_json, using empty dict")
         metrics = {}
 
-    # 1) Rule engine — deterministic score, faults, corrections (club-specific)
-    rule_result = analyze_swing(metrics, club=club)
+    log.info("Analyze request: club=%s video=%dKB phases=%s",
+             club, len(video_bytes) // 1024,
+             list(k for k in metrics if k != "swing_indicators"))
 
-    # 2) Non-swing → return immediately (skip Gemini)
+    rule_result = analyze_swing(metrics, club=club)
+    log.info("Rule engine: is_swing=%s score=%s faults=%d",
+             rule_result["is_swing"],
+             rule_result.get("score", "-"),
+             len(rule_result.get("faults", [])))
+
     if not rule_result["is_swing"]:
         coaching = json.dumps(
             {
@@ -169,17 +185,21 @@ async def analyze(
         )
         return {"summary": "스윙 미감지", "coaching": coaching}
 
-    # 3) Gemini — natural language phase comments only
-    gemini = generate_phase_comments(
-        video_bytes=video_bytes,
-        video_mime=video_mime,
-        notes=notes,
-        club=club,
-        metrics=metrics,
-        rule_result=rule_result,
-    )
+    try:
+        gemini = generate_phase_comments(
+            video_bytes=video_bytes,
+            video_mime=video_mime,
+            notes=notes,
+            club=club,
+            metrics=metrics,
+            rule_result=rule_result,
+        )
+        log.info("Gemini: %d phase comments", len(gemini.phase_comments))
+    except Exception as e:
+        log.error("Gemini failed: %s", e)
+        from gemini_coach import CommentsResult
+        gemini = CommentsResult(phase_comments={}, success=False)
 
-    # 4) Merge rule engine + Gemini results
     coaching = json.dumps(
         {
             "score": rule_result["score"],
@@ -192,6 +212,9 @@ async def analyze(
         },
         ensure_ascii=False,
     )
+
+    elapsed = time.time() - t0
+    log.info("Analyze complete: score=%d elapsed=%.1fs", rule_result["score"], elapsed)
 
     return {
         "summary": f"스윙 점수: {rule_result['score']}/100",
