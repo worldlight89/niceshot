@@ -1342,10 +1342,10 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   /* draw phase info ON the canvas when paused */
   if (!stopInfo) return;
 
-  var fontSize = Math.max(12, Math.round(w * 0.028));
-  var padding = Math.round(fontSize * 0.5);
-  var lineH = fontSize * 1.3;
-  var numR = Math.round(fontSize * 0.75);
+  var fontSize = Math.max(16, Math.round(w * 0.042));
+  var padding = Math.round(fontSize * 0.55);
+  var lineH = fontSize * 1.35;
+  var numR = Math.round(fontSize * 0.8);
   var isGood = !stopInfo.hasProblems;
   var accentColor = isGood ? '#27ae60' : '#e74c3c';
 
@@ -1399,7 +1399,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   }
 
   /* draw each issue as a colored card */
-  var maxTextW = w * 0.52;
+  var maxTextW = w * 0.62;
   ctx.font = fontSize + 'px sans-serif';
   var cardY = listY;
 
