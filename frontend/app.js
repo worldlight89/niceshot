@@ -611,42 +611,34 @@ var PHASE_RANGES = [
   { key: 'finish',        label: '피니시',      start: 3.2,  end: 4.0 }
 ];
 
-var slowmoPauseTime = -1;
+var slowmoPausePoints = [];
+var slowmoPauseIdx = 0;
 var slowmoPaused = false;
-var slowmoPauseDone = false;
 
 function showSlowmoPlayer() {
   goStep(10);
   var video = document.getElementById('slowmoVideo');
-  if (!video || !state.videoBlob) return;
+  var canvas = document.getElementById('slowmoCanvas');
+  if (!video || !canvas || !state.videoBlob) return;
 
   video.src = URL.createObjectURL(state.videoBlob);
   video.playbackRate = 0.25;
   video.muted = true;
 
-  slowmoPauseTime = findWorstPauseTime();
+  slowmoPausePoints = buildPausePoints();
+  slowmoPauseIdx = 0;
   slowmoPaused = false;
-  slowmoPauseDone = false;
-
-  var marker = document.getElementById('timelineMarker');
-  if (marker && slowmoPauseTime > 0) {
-    marker.style.display = 'block';
-  }
 
   video.onloadedmetadata = function () {
-    var cU = document.getElementById('canvasUser');
-    var cP = document.getElementById('canvasPro');
-    var h = 720; var w = 400;
-    if (cU) { cU.width = w; cU.height = h; }
-    if (cP) { cP.width = w; cP.height = h; }
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 360;
     video.play();
     startSlowmoOverlay();
   };
   video.onplay = function () {
     var btn = document.getElementById('slowmoPlayBtn');
     if (btn) btn.textContent = '⏸';
-    var badge = document.getElementById('pauseBadge');
-    if (badge) badge.style.display = 'none';
+    clearAnnotation();
     startSlowmoOverlay();
   };
   video.onpause = function () {
@@ -666,13 +658,14 @@ function toggleSlowmo() {
   if (video.paused || video.ended) {
     if (video.ended) {
       video.currentTime = 0;
-      slowmoPauseDone = false;
+      slowmoPauseIdx = 0;
       slowmoPaused = false;
     }
     if (slowmoPaused) {
       slowmoPaused = false;
-      slowmoPauseDone = true;
+      slowmoPauseIdx++;
     }
+    clearAnnotation();
     video.play();
   } else {
     video.pause();
@@ -696,125 +689,46 @@ function findClosestPoseFrame(time) {
   return (closest && minDist < 0.3) ? closest : null;
 }
 
-/* ── 각도 기반 교정 위치 계산 ── */
-function computeAngleCorrection(lms, corr, w, h) {
-  var vertex = lms[corr.vertex_idx];
-  var anchor = lms[corr.anchor_idx];
-  var endpoint = lms[corr.endpoint_idx];
-  if (!vertex || !anchor || !endpoint) return null;
-  if (vertex.visibility < 0.25 || endpoint.visibility < 0.25) return null;
-
-  var diffDeg = corr.target_deg - corr.current_deg;
-  var vex = endpoint.x - vertex.x;
-  var vey = endpoint.y - vertex.y;
-  var vax = anchor.x - vertex.x;
-  var vay = anchor.y - vertex.y;
-
-  var cross = vax * vey - vay * vex;
-  var sign = cross >= 0 ? 1 : -1;
-  var rad = diffDeg * sign * Math.PI / 180;
-  var cosR = Math.cos(rad);
-  var sinR = Math.sin(rad);
-
-  return {
-    x: (vertex.x + vex * cosR - vey * sinR) * w,
-    y: (vertex.y + vex * sinR + vey * cosR) * h
-  };
-}
-
-function findWorstPauseTime() {
-  if (!state.analysisResult || !state.analysisResult.corrections) return -1;
+function buildPausePoints() {
+  var points = [];
+  if (!state.analysisResult || !state.analysisResult.corrections) return points;
   var corr = state.analysisResult.corrections;
-  var worstPhase = null;
-  var worstScore = 0;
+
   for (var i = 0; i < PHASE_RANGES.length; i++) {
-    var pk = PHASE_RANGES[i].key;
-    var pc = corr[pk];
+    var pr = PHASE_RANGES[i];
+    var pc = corr[pr.key];
     if (!pc || pc.length === 0) continue;
-    var score = 0;
+
     for (var j = 0; j < pc.length; j++) {
-      score += (pc[j].severity === 'fault') ? 3 : 1;
+      points.push({
+        time: (pr.start + pr.end) / 2,
+        phaseKey: pr.key,
+        phaseLabel: pr.label,
+        jointIdx: pc[j].joint_idx,
+        label: pc[j].label || '',
+        severity: pc[j].severity
+      });
     }
-    if (score > worstScore) { worstScore = score; worstPhase = PHASE_RANGES[i]; }
   }
-  if (!worstPhase) return -1;
-  return (worstPhase.start + worstPhase.end) / 2;
+
+  points.sort(function (a, b) { return a.time - b.time; });
+  return points;
 }
 
-function buildCorrectedLandmarks(lms, phaseCorr) {
-  var corrected = [];
-  for (var i = 0; i < lms.length; i++) {
-    corrected.push({ x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility });
-  }
-  for (var ci = 0; ci < phaseCorr.length; ci++) {
-    var corr = phaseCorr[ci];
-    if (corr.type !== 'angle' || corr.vertex_idx === undefined) continue;
-    var vertex = lms[corr.vertex_idx];
-    var endpoint = lms[corr.endpoint_idx];
-    if (!vertex || !endpoint) continue;
-    if (vertex.visibility < 0.25 || endpoint.visibility < 0.25) continue;
-
-    var diffDeg = corr.target_deg - corr.current_deg;
-    var vex = endpoint.x - vertex.x;
-    var vey = endpoint.y - vertex.y;
-    var anchor = lms[corr.anchor_idx];
-    if (!anchor) continue;
-    var vax = anchor.x - vertex.x;
-    var vay = anchor.y - vertex.y;
-    var cross = vax * vey - vay * vex;
-    var sign = cross >= 0 ? 1 : -1;
-    var rad = diffDeg * sign * Math.PI / 180;
-    var cosR = Math.cos(rad);
-    var sinR = Math.sin(rad);
-
-    corrected[corr.endpoint_idx] = {
-      x: vertex.x + vex * cosR - vey * sinR,
-      y: vertex.y + vex * sinR + vey * cosR,
-      visibility: endpoint.visibility
-    };
-  }
-  return corrected;
+function showAnnotation(text) {
+  var el = document.getElementById('slowmoAnnotation');
+  if (el) el.innerHTML = '<div class="annotation-text">' + escapeHtml(text) + '</div>';
 }
-
-function drawSkeleton(ctx, lms, w, h, opts) {
-  var dotColor = opts.dotColor || 'rgba(255,255,255,0.7)';
-  var lineColor = opts.lineColor || 'rgba(255,255,255,0.5)';
-  var highlightJoints = opts.highlightJoints || {};
-  var highlightColor = opts.highlightColor || '#FF4444';
-
-  ctx.lineWidth = Math.max(2, w * 0.008);
-  for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
-    var conn = POSE_CONNECTIONS[ci];
-    var a = lms[conn[0]], b = lms[conn[1]];
-    if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
-    ctx.beginPath();
-    ctx.moveTo(a.x * w, a.y * h);
-    ctx.lineTo(b.x * w, b.y * h);
-    var isProblem = (conn[0] in highlightJoints) || (conn[1] in highlightJoints);
-    ctx.strokeStyle = isProblem ? highlightColor : lineColor;
-    ctx.stroke();
-  }
-
-  var DOT_R = Math.max(4, w * 0.015);
-  for (var li = 0; li < lms.length; li++) {
-    var lm = lms[li];
-    if (!lm || lm.visibility < 0.25) continue;
-    var jx = lm.x * w, jy = lm.y * h;
-    var isHL = li in highlightJoints;
-    ctx.beginPath();
-    ctx.arc(jx, jy, isHL ? DOT_R * 1.4 : DOT_R, 0, Math.PI * 2);
-    ctx.fillStyle = isHL ? highlightColor : dotColor;
-    ctx.fill();
-  }
+function clearAnnotation() {
+  var el = document.getElementById('slowmoAnnotation');
+  if (el) el.innerHTML = '';
 }
 
 function startSlowmoOverlay() {
   var video = document.getElementById('slowmoVideo');
-  var canvasUser = document.getElementById('canvasUser');
-  var canvasPro = document.getElementById('canvasPro');
-  if (!video || !canvasUser || !canvasPro) return;
-  var ctxU = canvasUser.getContext('2d');
-  var ctxP = canvasPro.getContext('2d');
+  var canvas = document.getElementById('slowmoCanvas');
+  if (!video || !canvas) return;
+  var ctx = canvas.getContext('2d');
 
   function drawFrame() {
     if (video.paused || video.ended) { slowmoAnimId = null; return; }
@@ -823,33 +737,29 @@ function startSlowmoOverlay() {
     var phase = getCurrentPhase(t);
     var poseFrame = findClosestPoseFrame(t);
 
-    /* auto-pause at worst phase */
-    if (!slowmoPauseDone && slowmoPauseTime > 0 && t >= slowmoPauseTime && !slowmoPaused) {
-      slowmoPaused = true;
-      video.pause();
-      var badge = document.getElementById('pauseBadge');
-      var pauseText = document.getElementById('pauseText');
-      if (badge) badge.style.display = 'flex';
-      if (pauseText) {
-        var phaseCorr2 = [];
-        if (state.analysisResult && state.analysisResult.corrections) {
-          phaseCorr2 = state.analysisResult.corrections[phase.key] || [];
-        }
-        var desc = phaseCorr2.length > 0 ? (phaseCorr2[0].label || '교정 포인트') : '교정 포인트';
-        pauseText.textContent = desc + ' — 좌우를 비교해 보세요';
+    /* auto-pause check */
+    if (slowmoPauseIdx < slowmoPausePoints.length && !slowmoPaused) {
+      var pp = slowmoPausePoints[slowmoPauseIdx];
+      if (t >= pp.time) {
+        slowmoPaused = true;
+        video.pause();
+
+        showAnnotation(pp.phaseLabel + ' — ' + pp.label);
+        drawOverlayFrame(ctx, canvas, video, poseFrame, phase, pp.jointIdx);
+
+        setTimeout(function () {
+          if (!slowmoPaused) return;
+          slowmoPaused = false;
+          slowmoPauseIdx++;
+          clearAnnotation();
+          video.play();
+        }, 3000);
+        slowmoAnimId = null;
+        return;
       }
-      setTimeout(function () {
-        slowmoPaused = false;
-        slowmoPauseDone = true;
-        if (badge) badge.style.display = 'none';
-        video.play();
-      }, 2500);
-      drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video);
-      slowmoAnimId = null;
-      return;
     }
 
-    drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video);
+    drawOverlayFrame(ctx, canvas, video, poseFrame, phase, -1);
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
@@ -857,14 +767,9 @@ function startSlowmoOverlay() {
   slowmoAnimId = requestAnimationFrame(drawFrame);
 }
 
-function drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video) {
-  var wU = canvasUser.width, hU = canvasUser.height;
-  var wP = canvasPro.width, hP = canvasPro.height;
-
-  ctxU.fillStyle = '#0a0a0a';
-  ctxU.fillRect(0, 0, wU, hU);
-  ctxP.fillStyle = '#0a0a0a';
-  ctxP.fillRect(0, 0, wP, hP);
+function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJointIdx) {
+  var w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
 
   /* UI 업데이트 */
   var phaseLabel = document.getElementById('slowmoPhaseLabel');
@@ -878,54 +783,61 @@ function drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t
   if (commentEl) commentEl.textContent = comment;
 
   var progress = document.getElementById('timelineProgress');
+  var t = video.currentTime;
   if (progress && video.duration) {
     progress.style.width = (t / video.duration * 100) + '%';
   }
 
-  var marker = document.getElementById('timelineMarker');
-  if (marker && slowmoPauseTime > 0 && video.duration) {
-    marker.style.left = (slowmoPauseTime / video.duration * 100) + '%';
-  }
-
   if (!poseFrame || !poseFrame.landmarks) return;
   var lms = poseFrame.landmarks;
+  var DOT_R = Math.max(4, w * 0.01);
 
-  var phaseCorr = [];
-  if (state.analysisResult && state.analysisResult.corrections) {
-    phaseCorr = state.analysisResult.corrections[phase.key] || [];
+  /* 스켈레톤 선 */
+  ctx.lineWidth = Math.max(2, w * 0.005);
+  for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
+    var conn = POSE_CONNECTIONS[ci];
+    var a = lms[conn[0]], b = lms[conn[1]];
+    if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x * w, a.y * h);
+    ctx.lineTo(b.x * w, b.y * h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.stroke();
   }
 
-  var corrJoints = {};
-  for (var ci2 = 0; ci2 < phaseCorr.length; ci2++) {
-    var c = phaseCorr[ci2];
-    corrJoints[c.joint_idx] = c;
-    if (c.vertex_idx !== undefined) corrJoints[c.vertex_idx] = c;
-    if (c.endpoint_idx !== undefined) corrJoints[c.endpoint_idx] = c;
+  /* 관절 점 */
+  for (var li = 0; li < lms.length; li++) {
+    var lm = lms[li];
+    if (!lm || lm.visibility < 0.25) continue;
+    ctx.beginPath();
+    ctx.arc(lm.x * w, lm.y * h, DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fill();
   }
 
-  /* 왼쪽: 사용자 스켈레톤 */
-  drawSkeleton(ctxU, lms, wU, hU, {
-    dotColor: 'rgba(255,120,120,0.8)',
-    lineColor: 'rgba(255,100,100,0.5)',
-    highlightJoints: corrJoints,
-    highlightColor: '#FF4444'
-  });
+  /* 문제 관절 빨간 원 강조 */
+  if (highlightJointIdx >= 0 && lms[highlightJointIdx]) {
+    var hj = lms[highlightJointIdx];
+    if (hj.visibility >= 0.2) {
+      var cx = hj.x * w, cy = hj.y * h;
+      var R = Math.max(20, w * 0.06);
 
-  /* 오른쪽: 교정된 정석 스켈레톤 */
-  var correctedLms = buildCorrectedLandmarks(lms, phaseCorr);
-  drawSkeleton(ctxP, correctedLms, wP, hP, {
-    dotColor: 'rgba(120,255,160,0.8)',
-    lineColor: 'rgba(100,255,140,0.5)',
-    highlightJoints: corrJoints,
-    highlightColor: '#44FF88'
-  });
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,68,68,0.9)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
 
-  /* 문제 구간 배지 (사용자 캔버스) */
-  if (phaseCorr.length > 0) {
-    ctxU.fillStyle = 'rgba(255,68,68,0.85)';
-    ctxU.font = 'bold ' + Math.max(12, wU * 0.035) + 'px sans-serif';
-    ctxU.textAlign = 'left';
-    ctxU.fillText('⚠ 교정 필요', 8, hU - 12);
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,68,68,0.15)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, DOT_R * 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#FF4444';
+      ctx.fill();
+    }
   }
 }
 
@@ -941,7 +853,7 @@ function resetAll() {
   poseRunning = false; okFrames = 0;
   setupDone = false; betweenState = 'idle'; noPersonFrames = 0;
   if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
-  slowmoPaused = false; slowmoPauseDone = false; slowmoPauseTime = -1;
+  slowmoPaused = false; slowmoPauseIdx = 0; slowmoPausePoints = [];
   var slowVid = document.getElementById('slowmoVideo');
   if (slowVid) { slowVid.pause(); slowVid.removeAttribute('src'); slowVid.load(); }
   if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }

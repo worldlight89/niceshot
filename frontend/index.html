@@ -110,48 +110,30 @@
     <button class="btn btn-secondary" onclick="resetAll()">처음부터 다시하기</button>
   </div>
 
-  <!-- Step 10: 슬로모션 비교 영상 -->
+  <!-- Step 10: 슬로모션 교정 영상 -->
   <div id="step10" class="step step-slowmo">
     <div class="slowmo-top">
       <button class="slowmo-back" onclick="goStep(9)">← 스코어</button>
-      <span class="slowmo-title">스윙 비교</span>
+      <span class="slowmo-title">교정 영상</span>
     </div>
 
-    <div class="split-container">
-      <div class="split-panel">
-        <div class="split-label split-label-user">내 스윙</div>
-        <canvas id="canvasUser" class="split-canvas"></canvas>
-      </div>
-      <div class="split-divider"></div>
-      <div class="split-panel">
-        <div class="split-label split-label-pro">정석 스윙</div>
-        <canvas id="canvasPro" class="split-canvas"></canvas>
-      </div>
+    <div class="slowmo-video-wrap">
+      <video id="slowmoVideo" playsinline muted></video>
+      <canvas id="slowmoCanvas"></canvas>
     </div>
-
-    <div class="pause-badge" id="pauseBadge" style="display:none">
-      <span class="pause-icon">⏸</span>
-      <span id="pauseText">교정 포인트 비교 중...</span>
-    </div>
-
-    <video id="slowmoVideo" style="display:none" playsinline muted></video>
 
     <div class="slowmo-controls">
       <button class="slowmo-play-btn" id="slowmoPlayBtn" onclick="toggleSlowmo()">▶</button>
       <div class="slowmo-timeline">
         <div class="timeline-bg"></div>
         <div class="timeline-progress" id="timelineProgress"></div>
-        <div class="timeline-marker" id="timelineMarker" style="display:none"></div>
       </div>
       <span class="slowmo-speed">0.25x</span>
     </div>
+    <div class="slowmo-annotation" id="slowmoAnnotation"></div>
     <div class="slowmo-info">
       <div class="slowmo-phase" id="slowmoPhaseLabel">—</div>
       <div class="slowmo-comment-text" id="slowmoComment"></div>
-    </div>
-    <div class="slowmo-legend">
-      <span class="legend-item"><span class="legend-dot red"></span>내 자세</span>
-      <span class="legend-item"><span class="legend-dot green"></span>정석 자세</span>
     </div>
     <button class="btn btn-secondary" onclick="resetAll()" style="margin:0 24px 24px">처음부터 다시하기</button>
   </div>
