@@ -804,6 +804,11 @@ function showScoreCard(data) {
 
   state.analysisResult = coaching;
 
+  console.log('[ScoreCard] coaching:', coaching ? 'OK' : 'null',
+    'score:', coaching && coaching.score,
+    'faults:', coaching && coaching.faults ? coaching.faults.length : 0,
+    'problems:', coaching && coaching.problems ? coaching.problems.length : 0);
+
   if (!coaching) {
     wrap.innerHTML = '<div class="result-card"><h3>분석 오류</h3><p>' +
       escapeHtml(data.coaching || '다시 시도해주세요.') + '</p></div>';
@@ -923,6 +928,8 @@ function buildPhaseStops() {
   var phaseGrades = (state.analysisResult && state.analysisResult.phase_grades) || {};
   var corrections = (state.analysisResult && state.analysisResult.corrections) || {};
   var faults = (state.analysisResult && state.analysisResult.faults) || [];
+
+  console.log('[buildPhaseStops] faults:', faults.length, 'phaseGrades:', Object.keys(phaseGrades));
 
   /* group ALL faults by phase, sorted by deduction within each phase */
   var phaseFaultMap = {};

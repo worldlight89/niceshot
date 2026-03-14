@@ -184,6 +184,8 @@ async def analyze(
         {
             "score": rule_result["score"],
             "problems": rule_result["problems"],
+            "faults": rule_result["faults"],
+            "phase_grades": rule_result["phase_grades"],
             "phase_comments": gemini.phase_comments,
             "drill": rule_result["drill"],
             "corrections": rule_result["corrections"],

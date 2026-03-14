@@ -53,8 +53,15 @@ def analyze_swing(metrics: dict[str, Any], club: str = "") -> dict[str, Any]:
     angles = get_pro_angles(club_cat)
     faults = _check_all_rules(metrics, club_cat, angles)
 
-    total_deduction = sum(f["deduction"] for f in faults)
-    score = max(0, 100 - total_deduction)
+    raw_deduction = sum(f["deduction"] for f in faults)
+    # Diminishing returns: first 40 pts count fully, next 40 at 50%, rest at 25%
+    if raw_deduction <= 40:
+        total_deduction = raw_deduction
+    elif raw_deduction <= 80:
+        total_deduction = 40 + (raw_deduction - 40) * 0.5
+    else:
+        total_deduction = 60 + (raw_deduction - 80) * 0.25
+    score = max(0, round(100 - total_deduction))
 
     return {
         "is_swing": True,
