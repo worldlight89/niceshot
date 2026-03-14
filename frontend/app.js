@@ -420,9 +420,72 @@ function extractDetailedMetrics(lms) {
   };
 }
 
+/* ── 실제 포즈 데이터에서 스윙 구간 자동 감지 ── */
+var detectedPhases = null;
+
+function detectSwingPhases() {
+  if (state.poseFrames.length < 10) return null;
+
+  var frames = [];
+  for (var i = 0; i < state.poseFrames.length; i++) {
+    var lms = state.poseFrames[i].landmarks;
+    if (!lms || lms.length < 29) continue;
+    frames.push({
+      time: state.poseFrames[i].time,
+      rWristH: 1 - lms[16].y
+    });
+  }
+  if (frames.length < 10) return null;
+
+  var topIdx = 0;
+  for (var i = 1; i < frames.length; i++) {
+    if (frames[i].rWristH > frames[topIdx].rWristH) topIdx = i;
+  }
+  var topTime = frames[topIdx].time;
+
+  var impactIdx = topIdx;
+  for (var i = topIdx + 1; i < frames.length; i++) {
+    if (frames[i].rWristH < frames[impactIdx].rWristH) impactIdx = i;
+  }
+  var impactTime = frames[impactIdx].time;
+  var totalTime = frames[frames.length - 1].time;
+
+  if (impactTime <= topTime) impactTime = topTime + 0.5;
+  if (totalTime <= impactTime) totalTime = impactTime + 0.5;
+
+  var addrEnd = topTime * 0.35;
+  var takeEnd = topTime * 0.7;
+  var topEnd = topTime + (impactTime - topTime) * 0.3;
+  var transEnd = topTime + (impactTime - topTime) * 0.7;
+  var impEnd = impactTime + 0.15;
+  var followEnd = impactTime + (totalTime - impactTime) * 0.55;
+
+  return {
+    ranges: [
+      { key: 'address',       label: '어드레스',    start: 0,        end: addrEnd },
+      { key: 'takeaway',      label: '테이크어웨이', start: addrEnd,  end: takeEnd },
+      { key: 'top',           label: '백스윙 탑',   start: takeEnd,  end: topEnd },
+      { key: 'transition',    label: '트랜지션',    start: topEnd,   end: transEnd },
+      { key: 'impact',        label: '임팩트',      start: transEnd, end: impEnd },
+      { key: 'followthrough', label: '팔로스루',    start: impEnd,   end: followEnd },
+      { key: 'finish',        label: '피니시',      start: followEnd,end: totalTime }
+    ],
+    keyTimes: {
+      address: Math.max(0, addrEnd * 0.5),
+      top: topTime,
+      impact: impactTime,
+      followthrough: Math.min(impactTime + (totalTime - impactTime) * 0.35, followEnd)
+    }
+  };
+}
+
 /* ── 저장된 포즈 프레임에서 핵심 구간 메트릭 추출 ── */
 function extractMetricsFromPoseFrames() {
-  var keyTimes = { address: 0.3, top: 1.3, impact: 2.3, followthrough: 2.8 };
+  detectedPhases = detectSwingPhases();
+  var keyTimes = detectedPhases
+    ? detectedPhases.keyTimes
+    : { address: 0.3, top: 1.3, impact: 2.3, followthrough: 2.8 };
+
   var metrics = {};
   var keys = Object.keys(keyTimes);
   for (var k = 0; k < keys.length; k++) {
@@ -670,7 +733,7 @@ function escapeHtml(text) {
 /* ================================================================
    결과 화면 2: 슬로모션 교정 영상 (step 10)
    ================================================================ */
-var PHASE_RANGES = [
+var DEFAULT_PHASE_RANGES = [
   { key: 'address',       label: '어드레스',    start: 0,    end: 0.5 },
   { key: 'takeaway',      label: '테이크어웨이', start: 0.5,  end: 1.0 },
   { key: 'top',           label: '백스윙 탑',   start: 1.0,  end: 1.5 },
@@ -679,6 +742,10 @@ var PHASE_RANGES = [
   { key: 'followthrough', label: '팔로스루',    start: 2.5,  end: 3.2 },
   { key: 'finish',        label: '피니시',      start: 3.2,  end: 4.0 }
 ];
+
+function getPhaseRanges() {
+  return (detectedPhases && detectedPhases.ranges) ? detectedPhases.ranges : DEFAULT_PHASE_RANGES;
+}
 
 var slowmoPausePoints = [];
 var slowmoPauseIdx = 0;
@@ -781,10 +848,11 @@ function toggleSlowmo() {
 }
 
 function getCurrentPhase(time) {
-  for (var i = 0; i < PHASE_RANGES.length; i++) {
-    if (time >= PHASE_RANGES[i].start && time < PHASE_RANGES[i].end) return PHASE_RANGES[i];
+  var ranges = getPhaseRanges();
+  for (var i = 0; i < ranges.length; i++) {
+    if (time >= ranges[i].start && time < ranges[i].end) return ranges[i];
   }
-  return PHASE_RANGES[PHASE_RANGES.length - 1];
+  return ranges[ranges.length - 1];
 }
 
 function findClosestPoseFrame(time) {
@@ -801,9 +869,10 @@ function buildPausePoints() {
   var points = [];
   if (!state.analysisResult || !state.analysisResult.corrections) return points;
   var corr = state.analysisResult.corrections;
+  var ranges = getPhaseRanges();
 
-  for (var i = 0; i < PHASE_RANGES.length; i++) {
-    var pr = PHASE_RANGES[i];
+  for (var i = 0; i < ranges.length; i++) {
+    var pr = ranges[i];
     var pc = corr[pr.key];
     if (!pc || pc.length === 0) continue;
 
@@ -977,6 +1046,7 @@ function resetAll() {
   state.videoBlob = null; state.poseFrames = [];
   state.analysisResult = null;
   state.isRecording = false;
+  detectedPhases = null;
   poseRunning = false; okFrames = 0;
   setupDone = false; betweenState = 'idle'; noPersonFrames = 0;
   if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
