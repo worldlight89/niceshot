@@ -460,52 +460,88 @@ function detectSwingPhases() {
   for (var i = 0; i < state.poseFrames.length; i++) {
     var lms = state.poseFrames[i].landmarks;
     if (!lms || lms.length < 29) continue;
+    var lWH = 1 - lms[15].y;
+    var rWH = 1 - lms[16].y;
     frames.push({
       time: state.poseFrames[i].time,
-      rWristH: 1 - lms[16].y
+      lWristH: lWH,
+      rWristH: rWH,
+      wristH: Math.max(lWH, rWH)
     });
   }
   if (frames.length < 10) return null;
 
+  /* 3-frame moving average for noise reduction */
+  var smooth = [];
+  for (var i = 0; i < frames.length; i++) {
+    var s = i > 0 ? i - 1 : 0;
+    var e = i < frames.length - 1 ? i + 1 : frames.length - 1;
+    var sum = 0, cnt = 0;
+    for (var j = s; j <= e; j++) { sum += frames[j].wristH; cnt++; }
+    smooth.push({ time: frames[i].time, wristH: sum / cnt });
+  }
+
+  /* Find TOP: highest wrist point */
   var topIdx = 0;
-  for (var i = 1; i < frames.length; i++) {
-    if (frames[i].rWristH > frames[topIdx].rWristH) topIdx = i;
+  for (var i = 1; i < smooth.length; i++) {
+    if (smooth[i].wristH > smooth[topIdx].wristH) topIdx = i;
   }
-  var topTime = frames[topIdx].time;
+  var topTime = smooth[topIdx].time;
 
+  /* Find IMPACT: lowest wrist point after top */
   var impactIdx = topIdx;
-  for (var i = topIdx + 1; i < frames.length; i++) {
-    if (frames[i].rWristH < frames[impactIdx].rWristH) impactIdx = i;
+  for (var i = topIdx + 1; i < smooth.length; i++) {
+    if (smooth[i].wristH < smooth[impactIdx].wristH) impactIdx = i;
   }
-  var impactTime = frames[impactIdx].time;
-  var totalTime = frames[frames.length - 1].time;
+  var impactTime = smooth[impactIdx].time;
 
-  if (impactTime <= topTime) impactTime = topTime + 0.5;
-  if (totalTime <= impactTime) totalTime = impactTime + 0.5;
+  /* Find ADDRESS: stable wrist height before backswing starts */
+  var swingStartIdx = 0;
+  var baseH = smooth[0].wristH;
+  for (var i = 1; i < topIdx; i++) {
+    if (smooth[i].wristH > baseH + 0.08) { swingStartIdx = Math.max(0, i - 1); break; }
+  }
+  var addressTime = smooth[swingStartIdx].time;
 
-  var addrEnd = topTime * 0.35;
-  var takeEnd = topTime * 0.7;
-  var topEnd = topTime + (impactTime - topTime) * 0.3;
-  var transEnd = topTime + (impactTime - topTime) * 0.7;
-  var impEnd = impactTime + 0.15;
-  var followEnd = impactTime + (totalTime - impactTime) * 0.55;
+  var totalTime = smooth[smooth.length - 1].time;
+  if (impactTime <= topTime) impactTime = topTime + 0.3;
+  if (totalTime <= impactTime) totalTime = impactTime + 0.3;
+
+  var swingDur = impactTime - addressTime;
+  var takeTime = addressTime + (topTime - addressTime) * 0.45;
+  var transTime = topTime + (impactTime - topTime) * 0.35;
+  var followTime = impactTime + (totalTime - impactTime) * 0.3;
+  var finishTime = impactTime + (totalTime - impactTime) * 0.6;
+
+  console.log('[Phase Detection] addr:', addressTime.toFixed(2),
+    'top:', topTime.toFixed(2), 'impact:', impactTime.toFixed(2),
+    'total:', totalTime.toFixed(2), 'frames:', frames.length);
 
   return {
     ranges: [
-      { key: 'address',       label: '어드레스',    start: 0,        end: addrEnd },
-      { key: 'takeaway',      label: '테이크어웨이', start: addrEnd,  end: takeEnd },
-      { key: 'top',           label: '백스윙 탑',   start: takeEnd,  end: topEnd },
-      { key: 'transition',    label: '트랜지션',    start: topEnd,   end: transEnd },
-      { key: 'impact',        label: '임팩트',      start: transEnd, end: impEnd },
-      { key: 'followthrough', label: '팔로스루',    start: impEnd,   end: followEnd },
-      { key: 'finish',        label: '피니시',      start: followEnd,end: totalTime }
+      { key: 'address',       label: '어드레스',    start: 0,          end: takeTime },
+      { key: 'takeaway',      label: '테이크어웨이', start: takeTime,   end: topTime - 0.05 },
+      { key: 'top',           label: '백스윙 탑',   start: topTime - 0.05, end: transTime },
+      { key: 'transition',    label: '트랜지션',    start: transTime,  end: impactTime - 0.03 },
+      { key: 'impact',        label: '임팩트',      start: impactTime - 0.03, end: followTime },
+      { key: 'followthrough', label: '팔로스루',    start: followTime, end: finishTime },
+      { key: 'finish',        label: '피니시',      start: finishTime, end: totalTime }
     ],
     keyTimes: {
-      address: Math.max(0, addrEnd * 0.5),
+      address: addressTime,
       top: topTime,
       impact: impactTime,
-      followthrough: Math.min(impactTime + (totalTime - impactTime) * 0.35, followEnd)
-    }
+      followthrough: followTime
+    },
+    pauseAt: [
+      addressTime,
+      takeTime + (topTime - 0.05 - takeTime) * 0.5,
+      topTime,
+      transTime + (impactTime - 0.03 - transTime) * 0.5,
+      impactTime,
+      followTime + (finishTime - followTime) * 0.5,
+      finishTime + (totalTime - finishTime) * 0.5
+    ]
   };
 }
 
@@ -787,6 +823,8 @@ function showSlowmoPlayer() {
   var canvas = document.getElementById('slowmoCanvas');
   if (!video || !canvas || !state.videoBlob) return;
 
+  if (!detectedPhases) detectedPhases = detectSwingPhases();
+
   video.src = URL.createObjectURL(state.videoBlob);
   video.playbackRate = 0.25;
   video.muted = true;
@@ -858,11 +896,13 @@ function buildPhaseDots() {
   if (!dotsEl) return;
   dotsEl.innerHTML = '';
   var ranges = getPhaseRanges();
+  var pauseTimes = detectedPhases ? detectedPhases.pauseAt : null;
+  var totalTime = ranges[ranges.length - 1].end || 4.0;
   for (var i = 0; i < ranges.length; i++) {
     var dot = document.createElement('div');
     dot.className = 'phase-dot';
-    var mid = (ranges[i].start + ranges[i].end) / 2;
-    dot.style.left = (mid / 4.0 * 100) + '%';
+    var t = pauseTimes ? pauseTimes[i] : (ranges[i].start + ranges[i].end) / 2;
+    dot.style.left = (t / totalTime * 100) + '%';
     dot.setAttribute('data-idx', i);
     dotsEl.appendChild(dot);
   }
@@ -967,7 +1007,8 @@ function startSlowmoOverlay() {
 
     if (slowmoPhaseIdx < ranges.length && !slowmoPaused) {
       var targetPhase = ranges[slowmoPhaseIdx];
-      var pauseTime = (targetPhase.start + targetPhase.end) / 2;
+      var pauseTimes = detectedPhases ? detectedPhases.pauseAt : null;
+      var pauseTime = pauseTimes ? pauseTimes[slowmoPhaseIdx] : (targetPhase.start + targetPhase.end) / 2;
       if (t >= pauseTime) {
         slowmoPaused = true;
         video.pause();
