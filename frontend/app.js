@@ -379,6 +379,63 @@ function extractMetricsFromPoseFrames() {
   return metrics;
 }
 
+/* ── 스윙 동작 감지 지표 추출 (MediaPipe 기반) ── */
+function extractSwingIndicators() {
+  if (state.poseFrames.length < 5) {
+    return { valid: false, has_swing_motion: false, reason: '포즈 감지 프레임 부족' };
+  }
+
+  var wristHeights = [];
+  var shoulderTilts = [];
+  var hipTilts = [];
+
+  for (var i = 0; i < state.poseFrames.length; i++) {
+    var lms = state.poseFrames[i].landmarks;
+    if (!lms || lms.length < 29) continue;
+
+    wristHeights.push(1 - lms[16].y);
+
+    var shoTilt = Math.atan2(lms[12].y - lms[11].y, lms[12].x - lms[11].x) * 180 / Math.PI;
+    shoulderTilts.push(Math.round(shoTilt));
+
+    var hipTilt = Math.atan2(lms[24].y - lms[23].y, lms[24].x - lms[23].x) * 180 / Math.PI;
+    hipTilts.push(Math.round(hipTilt));
+  }
+
+  if (wristHeights.length < 5) {
+    return { valid: false, has_swing_motion: false, reason: '유효한 랜드마크 부족' };
+  }
+
+  var maxWrist = Math.max.apply(null, wristHeights);
+  var minWrist = Math.min.apply(null, wristHeights);
+  var wristRange = maxWrist - minWrist;
+
+  var maxShoTilt = Math.max.apply(null, shoulderTilts);
+  var minShoTilt = Math.min.apply(null, shoulderTilts);
+  var shoulderRotation = maxShoTilt - minShoTilt;
+
+  var maxHipTilt = Math.max.apply(null, hipTilts);
+  var minHipTilt = Math.min.apply(null, hipTilts);
+  var hipRotation = maxHipTilt - minHipTilt;
+
+  var firstFrame = state.poseFrames[0].landmarks;
+  var shoulderH = 1 - ((firstFrame[11].y + firstFrame[12].y) / 2);
+  var wristAboveShoulder = maxWrist > shoulderH;
+
+  var hasSwing = wristRange > 0.12 && (shoulderRotation > 5 || hipRotation > 3);
+
+  return {
+    valid: true,
+    frame_count: state.poseFrames.length,
+    wrist_height_range_pct: Math.round(wristRange * 100),
+    wrist_peak_pct: Math.round(maxWrist * 100),
+    wrist_above_shoulder: wristAboveShoulder,
+    shoulder_rotation_deg: Math.round(shoulderRotation),
+    hip_rotation_deg: Math.round(hipRotation),
+    has_swing_motion: hasSwing
+  };
+}
+
 /* ================================================================
    AI 분석 업로드 (영상 + 메트릭)
    ================================================================ */
@@ -401,6 +458,7 @@ function uploadAndAnalyze() {
   }
 
   var metrics = extractMetricsFromPoseFrames();
+  metrics.swing_indicators = extractSwingIndicators();
   form.append('metrics_json', JSON.stringify(metrics));
   form.append('club', state.club || '');
   form.append('notes', state.concern || '');
@@ -466,6 +524,18 @@ function showScoreCard(data) {
   if (!coaching) {
     wrap.innerHTML = '<div class="result-card"><h3>분석 오류</h3><p>' +
       escapeHtml(data.coaching || '다시 시도해주세요.') + '</p></div>';
+    return;
+  }
+
+  /* 골프 스윙이 아닌 경우 */
+  if (coaching.score === -1) {
+    wrap.innerHTML =
+      '<div class="score-invalid">' +
+      '<div class="invalid-icon">⚠️</div>' +
+      '<h3>골프 스윙이 감지되지 않았습니다</h3>' +
+      '<p>' + escapeHtml(coaching.reason || '영상에서 골프 스윙 동작을 찾을 수 없습니다.') + '</p>' +
+      '<p class="invalid-hint">전신이 보이도록 카메라를 세우고<br>실제 스윙 동작을 해주세요.</p>' +
+      '</div>';
     return;
   }
 

@@ -583,6 +583,37 @@ html, body {
   font-weight: 600;
 }
 
+/* 골프 스윙 아님 경고 */
+.score-invalid {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.score-invalid .invalid-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+}
+
+.score-invalid h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #e74c3c;
+  margin-bottom: 12px;
+}
+
+.score-invalid p {
+  font-size: 0.95rem;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.score-invalid .invalid-hint {
+  font-size: 0.85rem;
+  color: #999;
+  margin-top: 16px;
+}
+
 /* 에러 카드 */
 .result-card {
   background: #fff;
