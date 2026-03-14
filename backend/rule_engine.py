@@ -91,10 +91,14 @@ def _check_rule(rule: dict, metrics: dict) -> dict | None:
         return _check_cross_phase(rule, metrics)
     if rtype == "below_threshold":
         return _check_below_threshold(rule, metrics)
+    if rtype == "above_threshold":
+        return _check_above_threshold(rule, metrics)
     if rtype == "equals":
         return _check_equals(rule, metrics)
     if rtype == "out_of_range":
         return _check_out_of_range(rule, metrics)
+    if rtype == "min_cross_phase":
+        return _check_min_cross_phase(rule, metrics)
     return None
 
 
@@ -152,6 +156,65 @@ def _check_below_threshold(rule: dict, metrics: dict) -> dict | None:
                 "label_ko": rule["label_ko"],
                 "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
                 "description": f"{rule['metric']} {val}° (기준 {ideal}°)",
+            }
+    return None
+
+
+def _check_above_threshold(rule: dict, metrics: dict) -> dict | None:
+    val = metrics.get(rule["phase"], {}).get(rule["metric"])
+    if val is None:
+        return None
+
+    for tier in rule["tiers"]:
+        if val > tier["above"]:
+            ref = PRO_ANGLES.get(rule["phase"], {}).get(rule["metric"], {})
+            ideal = ref.get("ideal", tier["above"])
+            return {
+                "id": rule["id"],
+                "phase": rule["phase"],
+                "joint": rule["joint"],
+                "joint_idx": rule["joint_idx"],
+                "metric": rule["metric"],
+                "current": val,
+                "target": ideal,
+                "deduction": tier["deduction"],
+                "severity": tier["severity"],
+                "label_ko": rule["label_ko"],
+                "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
+                "description": f"{rule['metric']} {val}° (기준 {ideal}°)",
+            }
+    return None
+
+
+def _check_min_cross_phase(rule: dict, metrics: dict) -> dict | None:
+    """Triggers when cross-phase difference is TOO SMALL (lack of movement)."""
+    val_a = metrics.get(rule["phase_a"], {}).get(rule["metric"])
+    val_b = metrics.get(rule["phase_b"], {}).get(rule["metric"])
+    if val_a is None or val_b is None:
+        return None
+
+    diff = abs(val_b - val_a)
+
+    for tier in rule["tiers"]:
+        if diff < tier["max_diff"]:
+            phase_key = rule.get("report_phase", rule["phase_b"])
+            return {
+                "id": rule["id"],
+                "phase": phase_key,
+                "joint": rule["joint"],
+                "joint_idx": rule["joint_idx"],
+                "metric": rule["metric"],
+                "current": val_b,
+                "reference": val_a,
+                "diff": round(diff, 1),
+                "deduction": tier["deduction"],
+                "severity": tier["severity"],
+                "label_ko": rule["label_ko"],
+                "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
+                "description": (
+                    f"{rule['metric']} 변화 {round(diff)}° "
+                    f"(최소 {tier['max_diff']}° 이상 필요)"
+                ),
             }
     return None
 

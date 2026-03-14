@@ -405,6 +405,9 @@ function extractDetailedMetrics(lms) {
   var rWristHeight = Math.round((1 - rWri.y) * 100);
   var shoulderHeight = Math.round((1 - shoMid.y) * 100);
 
+  var nose = pt(0);
+  var headHeight = Math.round((1 - nose.y) * 100);
+
   return {
     척추기울기_deg: spineAngle,
     어깨기울기_deg: tiltDeg(lSho, rSho),
@@ -416,6 +419,7 @@ function extractDetailedMetrics(lms) {
     오른무릎굴곡_deg: angleDeg(rHip, rKne, rAnk),
     오른손목_높이_pct: rWristHeight,
     어깨_높이_pct: shoulderHeight,
+    머리높이_pct: headHeight,
     손목_어깨위_여부: rWristHeight > shoulderHeight ? '손목이 어깨 위' : '손목이 어깨 아래'
   };
 }
