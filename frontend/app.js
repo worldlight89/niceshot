@@ -456,6 +456,13 @@ var detectedPhases = null;
 function detectSwingPhases() {
   if (state.poseFrames.length < 10) return null;
 
+  /* club-specific detection thresholds */
+  var club = state.club || '';
+  var isShort = (club === '웨지' || club === '퍼터' || club === '숏아이언');
+  var isPutter = (club === '퍼터');
+  var riseThresh = isPutter ? 0.02 : isShort ? 0.04 : 0.06;
+
+  /* extract per-frame signals */
   var frames = [];
   for (var i = 0; i < state.poseFrames.length; i++) {
     var lms = state.poseFrames[i].landmarks;
@@ -470,59 +477,59 @@ function detectSwingPhases() {
     var wristH = Math.max(lWH, rWH);
     var shoTilt = Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) * 180 / Math.PI;
     var hipTilt = Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x) * 180 / Math.PI;
-    var lArmAng = _angleDeg3(lSho, lElb, lWri);
     var rArmAng = _angleDeg3(rSho, rElb, rWri);
 
     frames.push({
       time: state.poseFrames[i].time,
       wristH: wristH,
-      lWristH: lWH,
-      rWristH: rWH,
       shoTilt: shoTilt,
       hipTilt: hipTilt,
       xFactor: Math.abs(shoTilt - hipTilt),
-      lArm: lArmAng,
-      rArm: rArmAng
+      rArm: rArmAng,
+      hipX: (lHip.x + rHip.x) / 2
     });
   }
   if (frames.length < 10) return null;
 
-  /* 5-frame moving average */
-  function smooth5(arr, key) {
+  /* smoothing helper */
+  function smoothN(arr, key, n) {
+    var half = Math.floor(n / 2);
     var out = [];
     for (var i = 0; i < arr.length; i++) {
-      var s = Math.max(0, i - 2), e = Math.min(arr.length - 1, i + 2);
+      var s = Math.max(0, i - half), e = Math.min(arr.length - 1, i + half);
       var sum = 0, cnt = 0;
       for (var j = s; j <= e; j++) { sum += arr[j][key]; cnt++; }
       out.push(sum / cnt);
     }
     return out;
   }
-  var sWrist = smooth5(frames, 'wristH');
-  var sXfact = smooth5(frames, 'xFactor');
+  var sWrist = smoothN(frames, 'wristH', 5);
+  var sXfact = smoothN(frames, 'xFactor', 5);
+  var sHipX  = smoothN(frames, 'hipX', 5);
+  var sRArm  = smoothN(frames, 'rArm', 5);
 
   var totalTime = frames[frames.length - 1].time;
 
-  /* 1) TOP: max wrist height */
-  var topIdx = 0;
+  /* === 1) BACKSWING TOP: max wrist height === */
+  var bsTopIdx = 0;
   for (var i = 1; i < sWrist.length; i++) {
-    if (sWrist[i] > sWrist[topIdx]) topIdx = i;
+    if (sWrist[i] > sWrist[bsTopIdx]) bsTopIdx = i;
   }
-  var topTime = frames[topIdx].time;
+  var bsTopTime = frames[bsTopIdx].time;
 
-  /* 2) IMPACT: min wrist height after top */
-  var impactIdx = topIdx;
-  for (var i = topIdx + 1; i < sWrist.length; i++) {
+  /* === 2) IMPACT: min wrist height after backswing top === */
+  var impactIdx = bsTopIdx;
+  for (var i = bsTopIdx + 1; i < sWrist.length; i++) {
     if (sWrist[i] < sWrist[impactIdx]) impactIdx = i;
   }
   var impactTime = frames[impactIdx].time;
-  if (impactTime <= topTime + 0.05) impactTime = topTime + (totalTime - topTime) * 0.4;
+  if (impactTime <= bsTopTime + 0.05) impactTime = bsTopTime + (totalTime - bsTopTime) * 0.4;
+  if (impactIdx <= bsTopIdx) impactIdx = Math.min(bsTopIdx + Math.round((frames.length - bsTopIdx) * 0.4), frames.length - 1);
 
-  /* 3) ADDRESS: stable period before wrist starts rising */
+  /* === 3) ADDRESS: stable period before wrist starts rising === */
   var baseH = sWrist[0];
-  var riseThresh = 0.06;
   var addressEndIdx = 0;
-  for (var i = 1; i < topIdx; i++) {
+  for (var i = 1; i < bsTopIdx; i++) {
     if (sWrist[i] > baseH + riseThresh) {
       addressEndIdx = Math.max(0, i - 1);
       break;
@@ -530,70 +537,91 @@ function detectSwingPhases() {
   }
   var addressTime = frames[0].time;
 
-  /* 4) TAKEAWAY: from address end to ~45% of backswing */
-  var takeEndIdx = addressEndIdx + Math.round((topIdx - addressEndIdx) * 0.45);
-  takeEndIdx = Math.min(takeEndIdx, topIdx - 1);
+  /* === 4) TAKEAWAY end: wrist reaches ~30% of its way to top,
+       or shoulder rotation starts diverging from address === */
+  var wristRange = sWrist[bsTopIdx] - baseH;
+  var takeRatio = isPutter ? 0.3 : isShort ? 0.35 : 0.4;
+  var takeThresh = baseH + wristRange * takeRatio;
+  var takeEndIdx = addressEndIdx;
+  for (var i = addressEndIdx; i < bsTopIdx; i++) {
+    if (sWrist[i] >= takeThresh) { takeEndIdx = i; break; }
+  }
+  if (takeEndIdx <= addressEndIdx) takeEndIdx = addressEndIdx + Math.round((bsTopIdx - addressEndIdx) * 0.4);
+  takeEndIdx = Math.min(takeEndIdx, bsTopIdx - 1);
   var takeawayTime = frames[Math.max(0, addressEndIdx)].time;
   var takeEndTime = frames[takeEndIdx].time;
 
-  /* 5) TRANSITION: from top to ~35% toward impact (max X-factor zone) */
-  var transEndIdx = topIdx + Math.round((impactIdx - topIdx) * 0.35);
-  transEndIdx = Math.min(transEndIdx, impactIdx - 1);
-  var transEndTime = frames[transEndIdx].time;
+  /* === 5) DOWNSWING start: hip starts leading (hip X shifts toward target)
+       or right arm starts unfolding after backswing top === */
+  var downStartIdx = bsTopIdx + 1;
+  if (bsTopIdx + 2 < impactIdx) {
+    var bsHipX = sHipX[bsTopIdx];
+    for (var i = bsTopIdx + 1; i < impactIdx; i++) {
+      var hipShift = Math.abs(sHipX[i] - bsHipX);
+      var armChange = sRArm[bsTopIdx] - sRArm[i];
+      if (hipShift > 0.01 || armChange > 8) { downStartIdx = i; break; }
+    }
+  }
+  var downStartTime = frames[Math.min(downStartIdx, frames.length - 1)].time;
 
-  /* 6) FOLLOW-THROUGH: after impact, wrist rises again - find peak after impact */
+  /* === 6) FOLLOW-THROUGH: after impact, wrist rises again === */
   var followPeakIdx = impactIdx;
   for (var i = impactIdx + 1; i < sWrist.length; i++) {
     if (sWrist[i] > sWrist[followPeakIdx]) followPeakIdx = i;
   }
   var followEndTime = frames[followPeakIdx].time;
-  if (followEndTime <= impactTime + 0.1) {
+  if (followEndTime <= impactTime + 0.08) {
     followEndTime = impactTime + (totalTime - impactTime) * 0.45;
   }
 
-  /* 7) FINISH: after follow-through peak to end */
-  var finishTime = followEndTime;
+  /* === 7) FINISH: wrist starts dropping after follow-through peak === */
+  var finishStartIdx = followPeakIdx;
+  for (var i = followPeakIdx + 1; i < sWrist.length; i++) {
+    if (sWrist[i] < sWrist[followPeakIdx] - 0.02) { finishStartIdx = i; break; }
+  }
+  var finishTime = frames[Math.min(finishStartIdx, frames.length - 1)].time;
+  if (finishTime <= followEndTime) finishTime = followEndTime;
 
-  /* representative time for each phase (where to pause video) */
+  /* representative pause times for each phase */
   var pauseAt = [
-    addressTime + 0.15,
+    addressTime + (takeawayTime - addressTime) * 0.5 + 0.05,
     takeawayTime + (takeEndTime - takeawayTime) * 0.5,
-    topTime,
-    topTime + (transEndTime - topTime) * 0.5,
+    bsTopTime,
+    downStartTime + (impactTime - downStartTime) * 0.35,
     impactTime,
     impactTime + (followEndTime - impactTime) * 0.5,
     finishTime + (totalTime - finishTime) * 0.4
   ];
   for (var p = 0; p < pauseAt.length; p++) {
-    pauseAt[p] = Math.min(pauseAt[p], totalTime - 0.05);
-    pauseAt[p] = Math.max(pauseAt[p], 0.05);
+    pauseAt[p] = Math.max(0.05, Math.min(pauseAt[p], totalTime - 0.05));
   }
 
   var result = {
     ranges: [
-      { key: 'address',       label: '어드레스',    start: 0,             end: takeawayTime },
-      { key: 'takeaway',      label: '테이크어웨이', start: takeawayTime,  end: takeEndTime },
-      { key: 'top',           label: '백스윙 탑',   start: takeEndTime,   end: topTime + 0.05 },
-      { key: 'transition',    label: '트랜지션',    start: topTime + 0.05,end: transEndTime },
-      { key: 'impact',        label: '임팩트',      start: transEndTime,  end: impactTime + 0.08 },
-      { key: 'followthrough', label: '팔로스루',    start: impactTime + 0.08, end: followEndTime },
-      { key: 'finish',        label: '피니시',      start: followEndTime, end: totalTime }
+      { key: 'address',       label: '어드레스',    start: 0,              end: takeawayTime },
+      { key: 'takeaway',      label: '테이크어웨이', start: takeawayTime,   end: takeEndTime },
+      { key: 'backswing',     label: '백스윙',      start: takeEndTime,    end: downStartTime },
+      { key: 'downswing',     label: '다운스윙',    start: downStartTime,  end: impactTime },
+      { key: 'impact',        label: '임팩트',      start: impactTime - 0.03, end: impactTime + 0.08 },
+      { key: 'followthrough', label: '팔로우스루',  start: impactTime + 0.08, end: finishTime },
+      { key: 'finish',        label: '피니시',      start: finishTime,     end: totalTime }
     ],
     keyTimes: {
-      address: addressTime + 0.15,
-      takeaway: takeawayTime + (takeEndTime - takeawayTime) * 0.5,
-      top: topTime,
-      transition: topTime + (transEndTime - topTime) * 0.5,
+      address: pauseAt[0],
+      takeaway: pauseAt[1],
+      backswing: bsTopTime,
+      downswing: pauseAt[3],
       impact: impactTime,
-      followthrough: impactTime + (followEndTime - impactTime) * 0.5,
-      finish: finishTime + (totalTime - finishTime) * 0.4
+      followthrough: pauseAt[5],
+      finish: pauseAt[6]
     },
     pauseAt: pauseAt
   };
 
-  console.log('[Phase Detection] addr:', addressTime.toFixed(2),
-    'take:', takeawayTime.toFixed(2), 'top:', topTime.toFixed(2),
-    'trans:', transEndTime.toFixed(2), 'impact:', impactTime.toFixed(2),
+  console.log('[Phase Detection] club:', club,
+    'addr:', addressTime.toFixed(2),
+    'take:', takeawayTime.toFixed(2), 'bsTop:', bsTopTime.toFixed(2),
+    'downStart:', downStartTime.toFixed(2), 'impact:', impactTime.toFixed(2),
     'follow:', followEndTime.toFixed(2), 'finish:', finishTime.toFixed(2),
     'total:', totalTime.toFixed(2), 'frames:', frames.length);
 
@@ -613,8 +641,8 @@ function _angleDeg3(a, b, c) {
 function extractMetricsFromPoseFrames() {
   detectedPhases = detectSwingPhases();
   var defaultTimes = {
-    address: 0.2, takeaway: 0.6, top: 1.2,
-    transition: 1.6, impact: 2.0,
+    address: 0.2, takeaway: 0.6, backswing: 1.2,
+    downswing: 1.6, impact: 2.0,
     followthrough: 2.6, finish: 3.2
   };
   var keyTimes = detectedPhases ? detectedPhases.keyTimes : defaultTimes;
@@ -759,8 +787,8 @@ var POSE_CONNECTIONS = [
    결과 화면 1: 스코어카드 (step 9)
    ================================================================ */
 var PHASE_LABELS = {
-  address: '어드레스', takeaway: '테이크어웨이', top: '백스윙 탑',
-  transition: '트랜지션', impact: '임팩트', followthrough: '팔로스루', finish: '피니시'
+  address: '어드레스', takeaway: '테이크어웨이', backswing: '백스윙',
+  downswing: '다운스윙', impact: '임팩트', followthrough: '팔로우스루', finish: '피니시'
 };
 
 function showScoreCard(data) {
@@ -869,10 +897,10 @@ function escapeHtml(text) {
 var DEFAULT_PHASE_RANGES = [
   { key: 'address',       label: '어드레스',    start: 0,    end: 0.5 },
   { key: 'takeaway',      label: '테이크어웨이', start: 0.5,  end: 1.0 },
-  { key: 'top',           label: '백스윙 탑',   start: 1.0,  end: 1.5 },
-  { key: 'transition',    label: '트랜지션',    start: 1.5,  end: 2.0 },
+  { key: 'backswing',     label: '백스윙',      start: 1.0,  end: 1.5 },
+  { key: 'downswing',     label: '다운스윙',    start: 1.5,  end: 2.0 },
   { key: 'impact',        label: '임팩트',      start: 2.0,  end: 2.5 },
-  { key: 'followthrough', label: '팔로스루',    start: 2.5,  end: 3.2 },
+  { key: 'followthrough', label: '팔로우스루',  start: 2.5,  end: 3.2 },
   { key: 'finish',        label: '피니시',      start: 3.2,  end: 4.0 }
 ];
 

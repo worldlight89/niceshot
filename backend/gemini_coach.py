@@ -103,9 +103,12 @@ def _build_prompt(
         problems_txt = "  - 없음 (우수한 스윙)\n"
 
     addr_m = json.dumps(metrics.get("address", {}), ensure_ascii=False)
-    top_m = json.dumps(metrics.get("top", {}), ensure_ascii=False)
+    take_m = json.dumps(metrics.get("takeaway", {}), ensure_ascii=False)
+    bs_m = json.dumps(metrics.get("backswing", {}), ensure_ascii=False)
+    ds_m = json.dumps(metrics.get("downswing", {}), ensure_ascii=False)
     imp_m = json.dumps(metrics.get("impact", {}), ensure_ascii=False)
     ft_m = json.dumps(metrics.get("followthrough", {}), ensure_ascii=False)
+    fin_m = json.dumps(metrics.get("finish", {}), ensure_ascii=False)
 
     concern = f"\n골퍼의 고민: {notes}" if notes else ""
 
@@ -121,9 +124,12 @@ def _build_prompt(
 {problems_txt}
 [MediaPipe 측정 수치]
 어드레스: {addr_m}
-백스윙 탑: {top_m}
+테이크어웨이: {take_m}
+백스윙: {bs_m}
+다운스윙: {ds_m}
 임팩트: {imp_m}
-팔로스루: {ft_m}
+팔로우스루: {ft_m}
+피니시: {fin_m}
 
 [지시사항]
 - 각 구간별 코멘트에 측정 수치 근거를 포함 (예: "척추각 38°로 양호")
@@ -136,8 +142,8 @@ def _build_prompt(
 {{
   "address": "코멘트",
   "takeaway": "코멘트",
-  "top": "코멘트",
-  "transition": "코멘트",
+  "backswing": "코멘트",
+  "downswing": "코멘트",
   "impact": "코멘트",
   "followthrough": "코멘트",
   "finish": "코멘트"
@@ -148,7 +154,7 @@ def _build_prompt(
 
 def _fallback(rule_result: dict | None) -> CommentsResult:
     phases = [
-        "address", "takeaway", "top", "transition",
+        "address", "takeaway", "backswing", "downswing",
         "impact", "followthrough", "finish",
     ]
     comments: dict[str, str] = {}

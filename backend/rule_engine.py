@@ -25,8 +25,9 @@ def analyze_swing(metrics: dict[str, Any], club: str = "") -> dict[str, Any]:
     Main entry point.
 
     Args:
-        metrics: dict with keys ``address``, ``top``, ``impact``,
-                 ``followthrough`` (optional), ``swing_indicators``.
+        metrics: dict with keys ``address``, ``takeaway``, ``backswing``,
+                 ``downswing``, ``impact``, ``followthrough``, ``finish``
+                 (all optional), ``swing_indicators``.
         club: club name string (e.g. "드라이버", "7I", "SW").
 
     Returns:
@@ -383,7 +384,7 @@ def _pick_drill(faults: list[dict]) -> dict:
 
 def _grade_phases(faults: list[dict]) -> dict[str, str]:
     phases = [
-        "address", "takeaway", "top", "transition",
+        "address", "takeaway", "backswing", "downswing",
         "impact", "followthrough", "finish",
     ]
     grades: dict[str, str] = {p: "good" for p in phases}
