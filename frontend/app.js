@@ -460,97 +460,164 @@ function detectSwingPhases() {
   for (var i = 0; i < state.poseFrames.length; i++) {
     var lms = state.poseFrames[i].landmarks;
     if (!lms || lms.length < 29) continue;
-    var lWH = 1 - lms[15].y;
-    var rWH = 1 - lms[16].y;
+
+    var lSho = lms[11], rSho = lms[12];
+    var lWri = lms[15], rWri = lms[16];
+    var lHip = lms[23], rHip = lms[24];
+    var lElb = lms[13], rElb = lms[14];
+
+    var lWH = 1 - lWri.y, rWH = 1 - rWri.y;
+    var wristH = Math.max(lWH, rWH);
+    var shoTilt = Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) * 180 / Math.PI;
+    var hipTilt = Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x) * 180 / Math.PI;
+    var lArmAng = _angleDeg3(lSho, lElb, lWri);
+    var rArmAng = _angleDeg3(rSho, rElb, rWri);
+
     frames.push({
       time: state.poseFrames[i].time,
+      wristH: wristH,
       lWristH: lWH,
       rWristH: rWH,
-      wristH: Math.max(lWH, rWH)
+      shoTilt: shoTilt,
+      hipTilt: hipTilt,
+      xFactor: Math.abs(shoTilt - hipTilt),
+      lArm: lArmAng,
+      rArm: rArmAng
     });
   }
   if (frames.length < 10) return null;
 
-  /* 3-frame moving average for noise reduction */
-  var smooth = [];
-  for (var i = 0; i < frames.length; i++) {
-    var s = i > 0 ? i - 1 : 0;
-    var e = i < frames.length - 1 ? i + 1 : frames.length - 1;
-    var sum = 0, cnt = 0;
-    for (var j = s; j <= e; j++) { sum += frames[j].wristH; cnt++; }
-    smooth.push({ time: frames[i].time, wristH: sum / cnt });
+  /* 5-frame moving average */
+  function smooth5(arr, key) {
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var s = Math.max(0, i - 2), e = Math.min(arr.length - 1, i + 2);
+      var sum = 0, cnt = 0;
+      for (var j = s; j <= e; j++) { sum += arr[j][key]; cnt++; }
+      out.push(sum / cnt);
+    }
+    return out;
   }
+  var sWrist = smooth5(frames, 'wristH');
+  var sXfact = smooth5(frames, 'xFactor');
 
-  /* Find TOP: highest wrist point */
+  var totalTime = frames[frames.length - 1].time;
+
+  /* 1) TOP: max wrist height */
   var topIdx = 0;
-  for (var i = 1; i < smooth.length; i++) {
-    if (smooth[i].wristH > smooth[topIdx].wristH) topIdx = i;
+  for (var i = 1; i < sWrist.length; i++) {
+    if (sWrist[i] > sWrist[topIdx]) topIdx = i;
   }
-  var topTime = smooth[topIdx].time;
+  var topTime = frames[topIdx].time;
 
-  /* Find IMPACT: lowest wrist point after top */
+  /* 2) IMPACT: min wrist height after top */
   var impactIdx = topIdx;
-  for (var i = topIdx + 1; i < smooth.length; i++) {
-    if (smooth[i].wristH < smooth[impactIdx].wristH) impactIdx = i;
+  for (var i = topIdx + 1; i < sWrist.length; i++) {
+    if (sWrist[i] < sWrist[impactIdx]) impactIdx = i;
   }
-  var impactTime = smooth[impactIdx].time;
+  var impactTime = frames[impactIdx].time;
+  if (impactTime <= topTime + 0.05) impactTime = topTime + (totalTime - topTime) * 0.4;
 
-  /* Find ADDRESS: stable wrist height before backswing starts */
-  var swingStartIdx = 0;
-  var baseH = smooth[0].wristH;
+  /* 3) ADDRESS: stable period before wrist starts rising */
+  var baseH = sWrist[0];
+  var riseThresh = 0.06;
+  var addressEndIdx = 0;
   for (var i = 1; i < topIdx; i++) {
-    if (smooth[i].wristH > baseH + 0.08) { swingStartIdx = Math.max(0, i - 1); break; }
+    if (sWrist[i] > baseH + riseThresh) {
+      addressEndIdx = Math.max(0, i - 1);
+      break;
+    }
   }
-  var addressTime = smooth[swingStartIdx].time;
+  var addressTime = frames[0].time;
 
-  var totalTime = smooth[smooth.length - 1].time;
-  if (impactTime <= topTime) impactTime = topTime + 0.3;
-  if (totalTime <= impactTime) totalTime = impactTime + 0.3;
+  /* 4) TAKEAWAY: from address end to ~45% of backswing */
+  var takeEndIdx = addressEndIdx + Math.round((topIdx - addressEndIdx) * 0.45);
+  takeEndIdx = Math.min(takeEndIdx, topIdx - 1);
+  var takeawayTime = frames[Math.max(0, addressEndIdx)].time;
+  var takeEndTime = frames[takeEndIdx].time;
 
-  var swingDur = impactTime - addressTime;
-  var takeTime = addressTime + (topTime - addressTime) * 0.45;
-  var transTime = topTime + (impactTime - topTime) * 0.35;
-  var followTime = impactTime + (totalTime - impactTime) * 0.3;
-  var finishTime = impactTime + (totalTime - impactTime) * 0.6;
+  /* 5) TRANSITION: from top to ~35% toward impact (max X-factor zone) */
+  var transEndIdx = topIdx + Math.round((impactIdx - topIdx) * 0.35);
+  transEndIdx = Math.min(transEndIdx, impactIdx - 1);
+  var transEndTime = frames[transEndIdx].time;
 
-  console.log('[Phase Detection] addr:', addressTime.toFixed(2),
-    'top:', topTime.toFixed(2), 'impact:', impactTime.toFixed(2),
-    'total:', totalTime.toFixed(2), 'frames:', frames.length);
+  /* 6) FOLLOW-THROUGH: after impact, wrist rises again - find peak after impact */
+  var followPeakIdx = impactIdx;
+  for (var i = impactIdx + 1; i < sWrist.length; i++) {
+    if (sWrist[i] > sWrist[followPeakIdx]) followPeakIdx = i;
+  }
+  var followEndTime = frames[followPeakIdx].time;
+  if (followEndTime <= impactTime + 0.1) {
+    followEndTime = impactTime + (totalTime - impactTime) * 0.45;
+  }
 
-  return {
+  /* 7) FINISH: after follow-through peak to end */
+  var finishTime = followEndTime;
+
+  /* representative time for each phase (where to pause video) */
+  var pauseAt = [
+    addressTime + 0.15,
+    takeawayTime + (takeEndTime - takeawayTime) * 0.5,
+    topTime,
+    topTime + (transEndTime - topTime) * 0.5,
+    impactTime,
+    impactTime + (followEndTime - impactTime) * 0.5,
+    finishTime + (totalTime - finishTime) * 0.4
+  ];
+  for (var p = 0; p < pauseAt.length; p++) {
+    pauseAt[p] = Math.min(pauseAt[p], totalTime - 0.05);
+    pauseAt[p] = Math.max(pauseAt[p], 0.05);
+  }
+
+  var result = {
     ranges: [
-      { key: 'address',       label: '어드레스',    start: 0,          end: takeTime },
-      { key: 'takeaway',      label: '테이크어웨이', start: takeTime,   end: topTime - 0.05 },
-      { key: 'top',           label: '백스윙 탑',   start: topTime - 0.05, end: transTime },
-      { key: 'transition',    label: '트랜지션',    start: transTime,  end: impactTime - 0.03 },
-      { key: 'impact',        label: '임팩트',      start: impactTime - 0.03, end: followTime },
-      { key: 'followthrough', label: '팔로스루',    start: followTime, end: finishTime },
-      { key: 'finish',        label: '피니시',      start: finishTime, end: totalTime }
+      { key: 'address',       label: '어드레스',    start: 0,             end: takeawayTime },
+      { key: 'takeaway',      label: '테이크어웨이', start: takeawayTime,  end: takeEndTime },
+      { key: 'top',           label: '백스윙 탑',   start: takeEndTime,   end: topTime + 0.05 },
+      { key: 'transition',    label: '트랜지션',    start: topTime + 0.05,end: transEndTime },
+      { key: 'impact',        label: '임팩트',      start: transEndTime,  end: impactTime + 0.08 },
+      { key: 'followthrough', label: '팔로스루',    start: impactTime + 0.08, end: followEndTime },
+      { key: 'finish',        label: '피니시',      start: followEndTime, end: totalTime }
     ],
     keyTimes: {
-      address: addressTime,
+      address: addressTime + 0.15,
+      takeaway: takeawayTime + (takeEndTime - takeawayTime) * 0.5,
       top: topTime,
+      transition: topTime + (transEndTime - topTime) * 0.5,
       impact: impactTime,
-      followthrough: followTime
+      followthrough: impactTime + (followEndTime - impactTime) * 0.5,
+      finish: finishTime + (totalTime - finishTime) * 0.4
     },
-    pauseAt: [
-      addressTime,
-      takeTime + (topTime - 0.05 - takeTime) * 0.5,
-      topTime,
-      transTime + (impactTime - 0.03 - transTime) * 0.5,
-      impactTime,
-      followTime + (finishTime - followTime) * 0.5,
-      finishTime + (totalTime - finishTime) * 0.5
-    ]
+    pauseAt: pauseAt
   };
+
+  console.log('[Phase Detection] addr:', addressTime.toFixed(2),
+    'take:', takeawayTime.toFixed(2), 'top:', topTime.toFixed(2),
+    'trans:', transEndTime.toFixed(2), 'impact:', impactTime.toFixed(2),
+    'follow:', followEndTime.toFixed(2), 'finish:', finishTime.toFixed(2),
+    'total:', totalTime.toFixed(2), 'frames:', frames.length);
+
+  return result;
 }
 
-/* ── 저장된 포즈 프레임에서 핵심 구간 메트릭 추출 ── */
+function _angleDeg3(a, b, c) {
+  var ab = { x: a.x - b.x, y: a.y - b.y };
+  var cb = { x: c.x - b.x, y: c.y - b.y };
+  var dot = ab.x * cb.x + ab.y * cb.y;
+  var mag = Math.sqrt(ab.x * ab.x + ab.y * ab.y) * Math.sqrt(cb.x * cb.x + cb.y * cb.y);
+  if (mag === 0) return 0;
+  return Math.round(Math.acos(Math.min(1, Math.max(-1, dot / mag))) * 180 / Math.PI);
+}
+
+/* ── 저장된 포즈 프레임에서 7개 구간 메트릭 추출 ── */
 function extractMetricsFromPoseFrames() {
   detectedPhases = detectSwingPhases();
-  var keyTimes = detectedPhases
-    ? detectedPhases.keyTimes
-    : { address: 0.3, top: 1.3, impact: 2.3, followthrough: 2.8 };
+  var defaultTimes = {
+    address: 0.2, takeaway: 0.6, top: 1.2,
+    transition: 1.6, impact: 2.0,
+    followthrough: 2.6, finish: 3.2
+  };
+  var keyTimes = detectedPhases ? detectedPhases.keyTimes : defaultTimes;
 
   var metrics = {};
   var keys = Object.keys(keyTimes);
@@ -813,34 +880,34 @@ function getPhaseRanges() {
   return (detectedPhases && detectedPhases.ranges) ? detectedPhases.ranges : DEFAULT_PHASE_RANGES;
 }
 
-var slowmoProblemIdx = 0;
+var slowmoPhaseIdx = 0;
 var slowmoPaused = false;
 var slowmoTapBound = false;
-var slowmoProblemStops = [];
+var slowmoPhaseStops = [];
 
-function buildProblemStops() {
+function buildPhaseStops() {
   var stops = [];
-  if (!state.analysisResult) return stops;
-
-  var problems = state.analysisResult.problems || [];
-  var corrections = state.analysisResult.corrections || {};
   var ranges = getPhaseRanges();
   var pauseTimes = detectedPhases ? detectedPhases.pauseAt : null;
 
-  for (var i = 0; i < problems.length; i++) {
-    var p = problems[i];
-    var phaseKey = p.phase;
+  var phaseGrades = (state.analysisResult && state.analysisResult.phase_grades) || {};
+  var corrections = (state.analysisResult && state.analysisResult.corrections) || {};
+  var problems = (state.analysisResult && state.analysisResult.problems) || [];
 
-    var pauseTime = null;
-    var phaseLabel = p.phase;
-    for (var r = 0; r < ranges.length; r++) {
-      if (ranges[r].key === phaseKey) {
-        phaseLabel = ranges[r].label;
-        pauseTime = pauseTimes ? pauseTimes[r] : (ranges[r].start + ranges[r].end) / 2;
-        break;
-      }
-    }
-    if (pauseTime === null) continue;
+  var phaseProblemMap = {};
+  for (var i = 0; i < problems.length; i++) {
+    var pk = problems[i].phase;
+    if (!phaseProblemMap[pk]) phaseProblemMap[pk] = [];
+    phaseProblemMap[pk].push(problems[i]);
+  }
+
+  for (var r = 0; r < ranges.length; r++) {
+    var range = ranges[r];
+    var phaseKey = range.key;
+    var pauseTime = pauseTimes ? pauseTimes[r] : (range.start + range.end) / 2;
+
+    var grade = phaseGrades[phaseKey] || 'good';
+    var phaseProbs = phaseProblemMap[phaseKey] || [];
 
     var joints = {};
     var pc = corrections[phaseKey];
@@ -854,17 +921,27 @@ function buildProblemStops() {
       }
     }
 
+    var desc = '';
+    if (phaseProbs.length > 0) {
+      var descs = [];
+      for (var pi = 0; pi < phaseProbs.length; pi++) {
+        descs.push(phaseProbs[pi].description || phaseProbs[pi].detail || '');
+      }
+      desc = descs.join(' / ');
+    }
+
     stops.push({
-      num: i + 1,
+      idx: r + 1,
       time: pauseTime,
       phaseKey: phaseKey,
-      phaseLabel: phaseLabel,
-      description: p.description || '',
-      joints: joints
+      phaseLabel: range.label,
+      grade: grade,
+      description: desc,
+      joints: joints,
+      hasProblems: phaseProbs.length > 0
     });
   }
 
-  stops.sort(function (a, b) { return a.time - b.time; });
   return stops;
 }
 
@@ -880,8 +957,8 @@ function showSlowmoPlayer() {
   video.playbackRate = 0.25;
   video.muted = true;
 
-  slowmoProblemStops = buildProblemStops();
-  slowmoProblemIdx = 0;
+  slowmoPhaseStops = buildPhaseStops();
+  slowmoPhaseIdx = 0;
   slowmoPaused = false;
 
   buildPhaseDots();
@@ -923,7 +1000,7 @@ function handleSlowmoTap() {
 
   if (video.ended) {
     video.currentTime = 0;
-    slowmoProblemIdx = 0;
+    slowmoPhaseIdx = 0;
     slowmoPaused = false;
     clearAnnotation();
     video.play();
@@ -932,7 +1009,7 @@ function handleSlowmoTap() {
 
   if (slowmoPaused) {
     slowmoPaused = false;
-    slowmoProblemIdx++;
+    slowmoPhaseIdx++;
     clearAnnotation();
     video.play();
   } else if (!video.paused) {
@@ -950,11 +1027,15 @@ function buildPhaseDots() {
   var ranges = getPhaseRanges();
   var totalTime = ranges[ranges.length - 1].end || 4.0;
 
-  for (var i = 0; i < slowmoProblemStops.length; i++) {
+  for (var i = 0; i < slowmoPhaseStops.length; i++) {
+    var stop = slowmoPhaseStops[i];
     var dot = document.createElement('div');
-    dot.className = 'phase-dot';
-    dot.style.left = (slowmoProblemStops[i].time / totalTime * 100) + '%';
+    var cls = 'phase-dot';
+    if (stop.hasProblems) cls += ' has-problem';
+    dot.className = cls;
+    dot.style.left = (stop.time / totalTime * 100) + '%';
     dot.setAttribute('data-idx', i);
+    dot.setAttribute('title', stop.phaseLabel);
     dotsEl.appendChild(dot);
   }
 }
@@ -963,7 +1044,9 @@ function updatePhaseDots(currentIdx) {
   var dots = document.querySelectorAll('.phase-dot');
   for (var i = 0; i < dots.length; i++) {
     var idx = parseInt(dots[i].getAttribute('data-idx'));
-    dots[i].className = 'phase-dot' + (idx === currentIdx ? ' active' : idx < currentIdx ? ' done' : '');
+    var base = 'phase-dot';
+    if (slowmoPhaseStops[idx] && slowmoPhaseStops[idx].hasProblems) base += ' has-problem';
+    dots[i].className = base + (idx === currentIdx ? ' active' : idx < currentIdx ? ' done' : '');
   }
 }
 
@@ -1031,20 +1114,19 @@ function startSlowmoOverlay() {
     if (badge) badge.textContent = phaseData.label;
     var indicator = document.getElementById('phaseIndicator');
     if (indicator) {
-      var total = slowmoProblemStops.length;
-      var done = slowmoProblemIdx;
-      indicator.textContent = total > 0 ? ('교정 ' + done + ' / ' + total) : '';
+      indicator.textContent = (slowmoPhaseIdx + 1) + ' / ' + slowmoPhaseStops.length;
     }
 
-    if (slowmoProblemIdx < slowmoProblemStops.length && !slowmoPaused) {
-      var stop = slowmoProblemStops[slowmoProblemIdx];
+    if (slowmoPhaseIdx < slowmoPhaseStops.length && !slowmoPaused) {
+      var stop = slowmoPhaseStops[slowmoPhaseIdx];
       if (t >= stop.time) {
         slowmoPaused = true;
         video.pause();
 
-        updatePhaseDots(slowmoProblemIdx);
+        updatePhaseDots(slowmoPhaseIdx);
         clearAnnotation();
-        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, stop.joints, stop);
+        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData,
+          stop.hasProblems ? stop.joints : {}, stop);
 
         setTapHint(true);
         slowmoAnimId = null;
@@ -1125,92 +1207,99 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints,
     if (hlCount > 0) hlCenter = { x: hlSumX / hlCount, y: hlSumY / hlCount };
   }
 
-  /* draw problem label ON the canvas when paused */
-  if (stopInfo && hlCenter) {
+  /* draw phase info ON the canvas when paused */
+  if (stopInfo) {
     var fontSize = Math.max(13, Math.round(w * 0.032));
     var padding = Math.round(fontSize * 0.6);
-    var maxTextW = w * 0.55;
-
-    ctx.font = 'bold ' + fontSize + 'px sans-serif';
-
-    var descLines = wrapText(ctx, stopInfo.description, maxTextW);
+    var maxTextW = w * 0.5;
     var lineH = fontSize * 1.35;
-    var boxW = 0;
-    for (var i = 0; i < descLines.length; i++) {
-      var lw = ctx.measureText(descLines[i]).width;
-      if (lw > boxW) boxW = lw;
+    var numR = Math.round(fontSize * 0.8);
+    var isGood = !stopInfo.hasProblems;
+    var accentColor = isGood ? '#27ae60' : '#e74c3c';
+
+    if (stopInfo.hasProblems && hlCenter) {
+      ctx.beginPath();
+      ctx.moveTo(hlCenter.x, hlCenter.y);
+      var lineTarget = { x: w * 0.05, y: h * 0.08 };
+      ctx.lineTo(lineTarget.x + maxTextW * 0.5, lineTarget.y + numR * 2 + 10);
+      ctx.strokeStyle = 'rgba(255,68,68,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
-    boxW += padding * 2;
-    var boxH = descLines.length * lineH + padding * 1.6;
 
-    var numR = Math.round(fontSize * 0.75);
-    var totalH = numR * 2 + 6 + boxH;
+    var bx = w * 0.04;
+    var by = h * 0.06;
 
-    var bx = hlCenter.x + Math.max(30, w * 0.08);
-    var by = hlCenter.y - totalH / 2;
-
-    if (bx + boxW > w - 10) bx = hlCenter.x - boxW - Math.max(30, w * 0.08);
-    if (bx < 10) bx = 10;
-    if (by < 10) by = 10;
-    if (by + totalH > h - 10) by = h - totalH - 10;
-
-    /* connector line */
-    ctx.beginPath();
-    ctx.moveTo(hlCenter.x, hlCenter.y);
-    ctx.lineTo(bx, by + totalH / 2);
-    ctx.strokeStyle = 'rgba(255,68,68,0.6)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    /* number circle + phase label */
+    /* phase number + label */
     var numCx = bx + numR;
     var numCy = by + numR;
     ctx.beginPath();
     ctx.arc(numCx, numCy, numR, 0, Math.PI * 2);
-    ctx.fillStyle = '#e74c3c';
+    ctx.fillStyle = accentColor;
     ctx.fill();
     ctx.font = 'bold ' + Math.round(fontSize * 0.85) + 'px sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('' + stopInfo.num, numCx, numCy);
+    ctx.fillText('' + stopInfo.idx, numCx, numCy);
 
-    if (stopInfo.phaseLabel) {
-      var plFont = Math.round(fontSize * 0.7);
-      ctx.font = 'bold ' + plFont + 'px sans-serif';
-      var plW = ctx.measureText(stopInfo.phaseLabel).width + plFont;
-      var plH = plFont * 1.6;
-      var plX = numCx + numR + 6;
-      var plY = numCy - plH / 2;
-      ctx.fillStyle = 'rgba(231,76,60,0.25)';
-      roundRect(ctx, plX, plY, plW, plH, plH / 2);
-      ctx.fill();
-      ctx.fillStyle = '#e74c3c';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(stopInfo.phaseLabel, plX + plFont * 0.5, numCy);
-    }
-
-    /* description box */
-    var descY = numCy + numR + 6;
-    ctx.fillStyle = 'rgba(0,0,0,0.78)';
-    var rr = Math.round(fontSize * 0.4);
-    roundRect(ctx, bx, descY, boxW, boxH, rr);
+    var plFont = Math.round(fontSize * 0.8);
+    ctx.font = 'bold ' + plFont + 'px sans-serif';
+    var labelText = stopInfo.phaseLabel;
+    var plW = ctx.measureText(labelText).width + plFont;
+    var plH = plFont * 1.7;
+    var plX = numCx + numR + 8;
+    var plY = numCy - plH / 2;
+    ctx.fillStyle = accentColor + '40';
+    roundRect(ctx, plX, plY, plW, plH, plH / 2);
     ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255,68,68,0.7)';
-    ctx.lineWidth = 2;
-    roundRect(ctx, bx, descY, boxW, boxH, rr);
-    ctx.stroke();
-
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + fontSize + 'px sans-serif';
+    ctx.fillStyle = accentColor;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    for (var i = 0; i < descLines.length; i++) {
-      ctx.fillText(descLines[i], bx + padding, descY + padding * 0.6 + i * lineH);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labelText, plX + plFont * 0.5, numCy);
+
+    /* description or "good" */
+    var descY = numCy + numR + 8;
+    ctx.font = 'bold ' + fontSize + 'px sans-serif';
+
+    if (isGood) {
+      var goodText = '✓ 좋습니다';
+      var gw = ctx.measureText(goodText).width + padding * 2;
+      var gh = lineH + padding;
+      ctx.fillStyle = 'rgba(39,174,96,0.2)';
+      roundRect(ctx, bx, descY, gw, gh, fontSize * 0.4);
+      ctx.fill();
+      ctx.fillStyle = '#27ae60';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(goodText, bx + padding, descY + padding * 0.4);
+    } else {
+      var descLines = wrapText(ctx, stopInfo.description, maxTextW);
+      var boxW = 0;
+      for (var i = 0; i < descLines.length; i++) {
+        var lw = ctx.measureText(descLines[i]).width;
+        if (lw > boxW) boxW = lw;
+      }
+      boxW = Math.max(boxW + padding * 2, plW + plX - bx);
+      var boxH = descLines.length * lineH + padding * 1.6;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      var rr = Math.round(fontSize * 0.4);
+      roundRect(ctx, bx, descY, boxW, boxH, rr);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,68,68,0.7)';
+      ctx.lineWidth = 2;
+      roundRect(ctx, bx, descY, boxW, boxH, rr);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      for (var i = 0; i < descLines.length; i++) {
+        ctx.fillText(descLines[i], bx + padding, descY + padding * 0.6 + i * lineH);
+      }
     }
   }
 }
@@ -1260,7 +1349,7 @@ function resetAll() {
   poseRunning = false; okFrames = 0;
   setupDone = false; betweenState = 'idle'; noPersonFrames = 0;
   if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
-  slowmoPaused = false; slowmoProblemIdx = 0; slowmoProblemStops = [];
+  slowmoPaused = false; slowmoPhaseIdx = 0; slowmoPhaseStops = [];
   var slowVid = document.getElementById('slowmoVideo');
   if (slowVid) { slowVid.pause(); slowVid.removeAttribute('src'); slowVid.load(); }
   if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }

@@ -666,6 +666,105 @@ DEDUCTION_RULES: list[dict] = [
         "joint": "left_shoulder",
         "joint_idx": 11,
     },
+    # --- takeaway: left arm should stay straight ---
+    {
+        "id": "takeaway_left_arm",
+        "type": "below_threshold",
+        "metric": "왼팔각도_deg",
+        "phase": "takeaway",
+        "tiers": [
+            {"below": 140, "deduction": 8, "severity": "fault"},
+            {"below": 155, "deduction": 4, "severity": "warning"},
+        ],
+        "label_ko": "테이크어웨이 왼팔 구부러짐",
+        "friendly_ko": "테이크어웨이에서 왼팔이 일찍 구부러져요. 왼팔을 쭉 편 채로 클럽을 뒤로 가져가 보세요.",
+        "joint": "left_elbow",
+        "joint_idx": 13,
+    },
+    # --- takeaway: excessive wrist cock ---
+    {
+        "id": "takeaway_spine_change",
+        "type": "cross_phase",
+        "metric": "척추기울기_deg",
+        "phase_a": "address",
+        "phase_b": "takeaway",
+        "tiers": [
+            {"min_diff": 15, "deduction": 7, "severity": "fault"},
+            {"min_diff": 10, "deduction": 3, "severity": "warning"},
+        ],
+        "label_ko": "테이크어웨이 척추각 변화",
+        "friendly_ko": "테이크어웨이에서 몸이 들리거나 숙여져요. 어드레스에서 잡은 척추각을 그대로 유지하세요.",
+        "report_phase": "takeaway",
+        "joint": "left_hip",
+        "joint_idx": 23,
+    },
+    # --- transition: hip leads before shoulders ---
+    {
+        "id": "transition_hip_lead",
+        "type": "min_cross_phase",
+        "metric": "힙기울기_deg",
+        "phase_a": "top",
+        "phase_b": "transition",
+        "tiers": [
+            {"max_diff": 2, "deduction": 8, "severity": "fault"},
+            {"max_diff": 4, "deduction": 4, "severity": "warning"},
+        ],
+        "label_ko": "트랜지션 골반 리드 부족",
+        "friendly_ko": "다운스윙 시작할 때 골반이 먼저 움직여야 해요. 골반을 타겟 방향으로 살짝 밀어주면서 다운스윙을 시작하세요.",
+        "report_phase": "transition",
+        "joint": "left_hip",
+        "joint_idx": 23,
+    },
+    # --- transition: early shoulder unwind ---
+    {
+        "id": "transition_casting",
+        "type": "cross_phase",
+        "metric": "오른팔각도_deg",
+        "phase_a": "top",
+        "phase_b": "transition",
+        "tiers": [
+            {"min_diff": 30, "deduction": 8, "severity": "fault"},
+            {"min_diff": 20, "deduction": 4, "severity": "warning"},
+        ],
+        "label_ko": "캐스팅 (오른팔 조기 풀림)",
+        "friendly_ko": "다운스윙에서 팔이 너무 일찍 펴져요. 오른팔 각도를 유지하며 하체부터 회전하세요.",
+        "report_phase": "transition",
+        "joint": "right_elbow",
+        "joint_idx": 14,
+    },
+    # --- finish: balance / weight transfer ---
+    {
+        "id": "finish_spine",
+        "type": "out_of_range",
+        "metric": "척추기울기_deg",
+        "phase": "finish",
+        "range": (-15, 30),
+        "club_range": {
+            "driver": (-15, 25),
+            "putter": (20, 50),
+        },
+        "deduction": 5,
+        "severity": "warning",
+        "label_ko": "피니시 자세 불안정",
+        "friendly_ko": "피니시에서 몸이 너무 숙여지거나 뒤로 젖혀져요. 균형 잡힌 피니시 자세를 유지하세요.",
+        "joint": "left_hip",
+        "joint_idx": 23,
+    },
+    # --- finish: right knee should be close to left ---
+    {
+        "id": "finish_weight_transfer",
+        "type": "below_threshold",
+        "metric": "왼무릎굴곡_deg",
+        "phase": "finish",
+        "tiers": [
+            {"below": 150, "deduction": 6, "severity": "fault"},
+            {"below": 165, "deduction": 3, "severity": "warning"},
+        ],
+        "label_ko": "피니시 체중 이동 부족",
+        "friendly_ko": "피니시에서 왼다리가 충분히 펴지지 않았어요. 체중을 왼발로 완전히 이동시키고 왼다리로 지탱하세요.",
+        "joint": "left_knee",
+        "joint_idx": 25,
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -810,5 +909,41 @@ DRILL_MAP: dict[str, dict[str, str]] = {
         "method": "거울 앞에서 클럽을 양쪽 어깨에 걸치고 "
                   "수평인지 확인합니다. 오른손이 아래에 있으므로 약간의 기울기는 허용되지만 과하면 안 됩니다.",
         "reps": "매 연습 시작 전 확인",
+    },
+    "takeaway_left_arm": {
+        "name": "원피스 테이크어웨이 드릴",
+        "method": "어깨, 팔, 클럽이 하나의 삼각형을 유지한 채 "
+                  "천천히 테이크어웨이합니다. 왼팔이 구부러지지 않도록 주의하세요.",
+        "reps": "슬로우 테이크어웨이 15회",
+    },
+    "takeaway_spine_change": {
+        "name": "척추각 유지 테이크어웨이 드릴",
+        "method": "거울 옆에서 어드레스 자세를 잡고 테이크어웨이할 때 "
+                  "머리 높이와 등의 각도가 변하지 않는지 확인하세요.",
+        "reps": "슬로우 테이크어웨이 10회",
+    },
+    "transition_hip_lead": {
+        "name": "골반 리드 전환 드릴",
+        "method": "백스윙 탑에서 멈춘 뒤, 왼쪽 골반을 타겟 방향으로 "
+                  "살짝 밀면서 다운스윙을 시작합니다. 상체는 아직 뒤에 남겨두세요.",
+        "reps": "정지 후 전환 10회 3세트",
+    },
+    "transition_casting": {
+        "name": "래그 유지 드릴",
+        "method": "다운스윙 시 오른팔 각도를 유지하며 "
+                  "허벅지 높이까지 내려온 후에야 손목을 풀어줍니다.",
+        "reps": "슬로우 다운스윙 15회",
+    },
+    "finish_spine": {
+        "name": "I자 피니시 드릴",
+        "method": "스윙 후 몸이 I자 형태가 되도록 "
+                  "가슴이 타겟을 향하고 등이 곧은 피니시를 만드세요.",
+        "reps": "매 스윙 후 3초 유지",
+    },
+    "finish_weight_transfer": {
+        "name": "왼발 밸런스 드릴",
+        "method": "피니시에서 오른발을 완전히 들어올려 "
+                  "왼발만으로 3초간 균형을 유지하세요.",
+        "reps": "10회 3세트",
     },
 }

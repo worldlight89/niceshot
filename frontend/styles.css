@@ -774,15 +774,17 @@ html, body {
 .phase-dot {
   position: absolute;
   top: 50%;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.4);
+  background: rgba(39,174,96,0.7);
   transform: translate(-50%, -50%);
-  transition: background 0.3s;
+  transition: background 0.3s, box-shadow 0.3s;
+  border: 1.5px solid rgba(255,255,255,0.3);
 }
-.phase-dot.active { background: #4fc3f7; }
-.phase-dot.done { background: rgba(255,255,255,0.15); }
+.phase-dot.has-problem { background: rgba(231,76,60,0.8); }
+.phase-dot.active { background: #4fc3f7; box-shadow: 0 0 6px #4fc3f7; transform: translate(-50%, -50%) scale(1.4); }
+.phase-dot.done { opacity: 0.4; }
 
 .slowmo-play-btn-hidden {
   display: none;
