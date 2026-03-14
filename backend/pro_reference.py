@@ -26,14 +26,14 @@ from __future__ import annotations
 
 CLUB_CATEGORY_MAP: dict[str, str] = {
     "드라이버": "driver", "1W": "driver", "Driver": "driver",
-    "3W": "fairway", "5W": "fairway",
+    "페어웨이우드": "fairway", "3W": "fairway", "5W": "fairway",
     "유틸리티": "fairway", "하이브리드": "fairway", "UT": "fairway",
-    "3I": "long_iron", "4I": "long_iron", "5I": "long_iron",
-    "6I": "mid_iron", "7I": "mid_iron", "8I": "mid_iron",
-    "9I": "short_iron", "PW": "short_iron",
-    "SW": "wedge", "LW": "wedge", "AW": "wedge",
+    "롱아이언": "long_iron", "3I": "long_iron", "4I": "long_iron", "5I": "long_iron",
+    "미들아이언": "mid_iron", "6I": "mid_iron", "7I": "mid_iron", "8I": "mid_iron",
+    "숏아이언": "short_iron", "9I": "short_iron", "PW": "short_iron",
+    "웨지": "wedge", "SW": "wedge", "LW": "wedge", "AW": "wedge",
     "52": "wedge", "56": "wedge", "58": "wedge", "60": "wedge",
-    "PT": "putter",
+    "퍼터": "putter", "PT": "putter",
 }
 
 DEFAULT_CLUB_CATEGORY = "mid_iron"
