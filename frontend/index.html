@@ -102,25 +102,11 @@
     </div>
   </div>
 
-  <!-- Step 8: 스윙 후 선택 -->
-  <div id="step8" class="step">
-    <div class="center">
-      <div class="icon-big">🏌️‍♂️</div>
-      <h2 class="question">스윙 완료!</h2>
-      <p class="hint" id="postSwingHint">AI 코칭을 바로 받으시겠습니까?<br>한 타 더 연습 후 받으시겠습니까?</p>
-      <div class="voice-indicator" id="voiceIndicatorPost" style="position:relative;margin:16px auto 0;pointer-events:auto">
-        <span class="mic">🎤</span>
-        <span id="voiceStatusPost">"분석" 또는 "한번 더" 라고 말해보세요</span>
-      </div>
-    </div>
-    <button class="btn btn-primary" onclick="uploadAndAnalyze()">🤖 바로 분석하기</button>
-    <button class="btn btn-outline" onclick="practiceAgain()">🔄 한 번 더 연습 후 분석</button>
-  </div>
-
   <!-- Step 9: 스코어카드 결과 -->
   <div id="step9" class="step step-results">
     <h2 class="question-top">AI 코칭 결과</h2>
     <div id="scoreCardWrap" class="scorecard-wrap"></div>
+    <button class="btn btn-primary" onclick="practiceAgain()">🏌️ 한 번 더 연습</button>
     <button class="btn btn-secondary" onclick="resetAll()">처음부터 다시하기</button>
   </div>
 
@@ -166,12 +152,6 @@
       if (ind2) {
         if (s === 'on') { ind2.classList.add('listening'); if (txt2) txt2.textContent = '음성 듣는 중 — "시작" / "다시"'; }
         else { ind2.classList.remove('listening'); if (txt2) txt2.textContent = '음성 인식 꺼짐'; }
-      }
-      var indPost = document.getElementById('voiceIndicatorPost');
-      var txtPost = document.getElementById('voiceStatusPost');
-      if (indPost) {
-        if (s === 'on') { indPost.classList.add('listening'); if (txtPost) txtPost.textContent = '"분석" 또는 "한번 더" 라고 말해보세요'; }
-        else { indPost.classList.remove('listening'); }
       }
     };
     window.showVoiceHeard = function(text) {

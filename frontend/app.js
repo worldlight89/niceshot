@@ -281,20 +281,13 @@ function captureSwing() {
 
   recorder.onstop = function () {
     state.videoBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
-    showPostSwingScreen();
+    speak('스윙 완료. 분석을 시작합니다.');
+    uploadAndAnalyze();
   };
-}
-
-/* 스윙 완료 후 선택 화면 */
-function showPostSwingScreen() {
-  goStep(8);
-  speak('스윙이 완료됐습니다. 바로 코칭 분석을 받으시겠습니까? 아니면 한 타 더 연습 후 코칭 받으시겠습니까?');
-  startVoiceRecognition();
 }
 
 /* 한 번 더 연습 */
 function practiceAgain() {
-  stopVoiceRecognition();
   goStep(7);
   betweenState = 'idle';
   poseRunning = false;
@@ -439,10 +432,7 @@ function extractSwingIndicators() {
 /* ================================================================
    AI 분석 업로드 (영상 + 메트릭)
    ================================================================ */
-function isPostSwingActive() {
-  var s8 = document.getElementById('step8');
-  return s8 && s8.classList.contains('active');
-}
+function isPostSwingActive() { return false; }
 
 function uploadAndAnalyze() {
   stopVoiceRecognition();
@@ -846,10 +836,8 @@ function startVoiceRecognition() {
     voiceActive = false;
     var s7 = document.getElementById('step7');
     var s6 = document.getElementById('step6');
-    var s8 = document.getElementById('step8');
     var active = (s7 && s7.classList.contains('active')) ||
-                 (s6 && s6.classList.contains('active')) ||
-                 (s8 && s8.classList.contains('active'));
+                 (s6 && s6.classList.contains('active'));
     if (active) setTimeout(startVoiceRecognition, 500);
     else setVoiceStatus('off');
   };
@@ -860,11 +848,7 @@ function startVoiceRecognition() {
     var text = last[0].transcript.trim();
     showVoiceHeard(text);
     if (text.indexOf('시작') >= 0) voiceTriggerStart();
-    if (text.indexOf('다시') >= 0 && !isPostSwingActive()) voiceTriggerRedo();
-    if (isPostSwingActive()) {
-      if (text.indexOf('분석') >= 0) uploadAndAnalyze();
-      else if (text.indexOf('더') >= 0 || text.indexOf('한번') >= 0 || text.indexOf('한 번') >= 0) practiceAgain();
-    }
+    if (text.indexOf('다시') >= 0) voiceTriggerRedo();
   };
   try { voiceRecognition.start(); } catch (e) {}
 }
