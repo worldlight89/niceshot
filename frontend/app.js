@@ -650,6 +650,45 @@ function showSlowmoPlayer() {
     if (btn) btn.textContent = '↻';
     if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
   };
+
+  initTimelineSeek(video);
+}
+
+function initTimelineSeek(video) {
+  var timeline = document.getElementById('slowmoTimeline');
+  if (!timeline || timeline._seekBound) return;
+  timeline._seekBound = true;
+
+  function seekTo(e) {
+    if (!video.duration) return;
+    var rect = timeline.getBoundingClientRect();
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    video.currentTime = pct * video.duration;
+
+    slowmoPauseIdx = 0;
+    slowmoPaused = false;
+    for (var i = 0; i < slowmoPausePoints.length; i++) {
+      if (slowmoPausePoints[i].time <= video.currentTime) slowmoPauseIdx = i + 1;
+    }
+
+    clearAnnotation();
+    var canvas = document.getElementById('slowmoCanvas');
+    if (canvas) {
+      var ctx = canvas.getContext('2d');
+      var phase = getCurrentPhase(video.currentTime);
+      var poseFrame = findClosestPoseFrame(video.currentTime);
+      drawOverlayFrame(ctx, canvas, video, poseFrame, phase, {});
+    }
+  }
+
+  var dragging = false;
+  timeline.addEventListener('mousedown', function (e) { dragging = true; video.pause(); seekTo(e); });
+  timeline.addEventListener('touchstart', function (e) { dragging = true; video.pause(); seekTo(e); }, { passive: true });
+  document.addEventListener('mousemove', function (e) { if (dragging) seekTo(e); });
+  document.addEventListener('touchmove', function (e) { if (dragging) seekTo(e); }, { passive: true });
+  document.addEventListener('mouseup', function () { if (dragging) { dragging = false; } });
+  document.addEventListener('touchend', function () { if (dragging) { dragging = false; } });
 }
 
 function toggleSlowmo() {
@@ -699,16 +738,24 @@ function buildPausePoints() {
     var pc = corr[pr.key];
     if (!pc || pc.length === 0) continue;
 
+    var joints = {};
+    var labels = [];
     for (var j = 0; j < pc.length; j++) {
-      points.push({
-        time: (pr.start + pr.end) / 2,
-        phaseKey: pr.key,
-        phaseLabel: pr.label,
-        jointIdx: pc[j].joint_idx,
-        label: pc[j].label || '',
-        severity: pc[j].severity
-      });
+      var c = pc[j];
+      joints[c.joint_idx] = true;
+      if (c.vertex_idx !== undefined) joints[c.vertex_idx] = true;
+      if (c.anchor_idx !== undefined) joints[c.anchor_idx] = true;
+      if (c.endpoint_idx !== undefined) joints[c.endpoint_idx] = true;
+      if (c.label) labels.push(c.label);
     }
+
+    points.push({
+      time: (pr.start + pr.end) / 2,
+      phaseKey: pr.key,
+      phaseLabel: pr.label,
+      joints: joints,
+      labels: labels
+    });
   }
 
   points.sort(function (a, b) { return a.time - b.time; });
@@ -717,7 +764,15 @@ function buildPausePoints() {
 
 function showAnnotation(text) {
   var el = document.getElementById('slowmoAnnotation');
-  if (el) el.innerHTML = '<div class="annotation-text">' + escapeHtml(text) + '</div>';
+  if (!el) return;
+  var lines = text.split('\n');
+  var html = '<div class="annotation-text">';
+  html += '<strong>' + escapeHtml(lines[0]) + '</strong>';
+  for (var i = 1; i < lines.length; i++) {
+    html += '<br>' + escapeHtml(lines[i]);
+  }
+  html += '</div>';
+  el.innerHTML = html;
 }
 function clearAnnotation() {
   var el = document.getElementById('slowmoAnnotation');
@@ -744,8 +799,8 @@ function startSlowmoOverlay() {
         slowmoPaused = true;
         video.pause();
 
-        showAnnotation(pp.phaseLabel + ' — ' + pp.label);
-        drawOverlayFrame(ctx, canvas, video, poseFrame, phase, pp.jointIdx);
+        showAnnotation(pp.phaseLabel + '\n' + pp.labels.join('\n'));
+        drawOverlayFrame(ctx, canvas, video, poseFrame, phase, pp.joints);
 
         setTimeout(function () {
           if (!slowmoPaused) return;
@@ -759,7 +814,7 @@ function startSlowmoOverlay() {
       }
     }
 
-    drawOverlayFrame(ctx, canvas, video, poseFrame, phase, -1);
+    drawOverlayFrame(ctx, canvas, video, poseFrame, phase, {});
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
@@ -767,7 +822,7 @@ function startSlowmoOverlay() {
   slowmoAnimId = requestAnimationFrame(drawFrame);
 }
 
-function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJointIdx) {
+function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints) {
   var w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
@@ -791,17 +846,21 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJointId
   if (!poseFrame || !poseFrame.landmarks) return;
   var lms = poseFrame.landmarks;
   var DOT_R = Math.max(4, w * 0.01);
+  var hasHL = false;
+  for (var k in highlightJoints) { hasHL = true; break; }
 
   /* 스켈레톤 선 */
-  ctx.lineWidth = Math.max(2, w * 0.005);
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
     var conn = POSE_CONNECTIONS[ci];
     var a = lms[conn[0]], b = lms[conn[1]];
     if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
+
+    var connHL = hasHL && ((conn[0] in highlightJoints) || (conn[1] in highlightJoints));
     ctx.beginPath();
     ctx.moveTo(a.x * w, a.y * h);
     ctx.lineTo(b.x * w, b.y * h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = connHL ? Math.max(4, w * 0.008) : Math.max(2, w * 0.005);
+    ctx.strokeStyle = connHL ? 'rgba(255,68,68,0.85)' : 'rgba(255,255,255,0.45)';
     ctx.stroke();
   }
 
@@ -809,33 +868,31 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJointId
   for (var li = 0; li < lms.length; li++) {
     var lm = lms[li];
     if (!lm || lm.visibility < 0.25) continue;
+    var isHL = hasHL && (li in highlightJoints);
     ctx.beginPath();
-    ctx.arc(lm.x * w, lm.y * h, DOT_R, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.arc(lm.x * w, lm.y * h, isHL ? DOT_R * 1.6 : DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = isHL ? '#FF4444' : 'rgba(255,255,255,0.6)';
     ctx.fill();
   }
 
-  /* 문제 관절 빨간 원 강조 */
-  if (highlightJointIdx >= 0 && lms[highlightJointIdx]) {
-    var hj = lms[highlightJointIdx];
-    if (hj.visibility >= 0.2) {
+  /* 문제 관절 빨간 원 강조 (큰 링) */
+  if (hasHL) {
+    for (var ji in highlightJoints) {
+      var idx = parseInt(ji);
+      if (isNaN(idx) || !lms[idx] || lms[idx].visibility < 0.2) continue;
+      var hj = lms[idx];
       var cx = hj.x * w, cy = hj.y * h;
-      var R = Math.max(20, w * 0.06);
+      var R = Math.max(18, w * 0.05);
 
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,68,68,0.9)';
+      ctx.strokeStyle = 'rgba(255,68,68,0.8)';
       ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,68,68,0.15)';
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, DOT_R * 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = '#FF4444';
+      ctx.fillStyle = 'rgba(255,68,68,0.12)';
       ctx.fill();
     }
   }
