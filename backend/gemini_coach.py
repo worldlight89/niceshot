@@ -71,17 +71,17 @@ def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
 - joint: left_shoulder/right_shoulder/left_elbow/right_elbow/left_wrist/right_wrist/left_hip/right_hip/left_knee/right_knee/left_ankle/right_ankle 중 선택
 - direction: up/down/forward/back/left/right 중 선택
 
-{{{{
-  "address":       {{{{"corrections": [{{{{"joint":"관절","direction":"방향","comment":"1문장"}}}}], "comment":"1문장"}}}},
-  "takeaway":      {{{{"corrections": [], "comment":"1문장"}}}},
-  "top":           {{{{"corrections": [], "comment":"1문장"}}}},
-  "transition":    {{{{"corrections": [], "comment":"1문장"}}}},
-  "impact":        {{{{"corrections": [], "comment":"1문장"}}}},
-  "followthrough": {{{{"corrections": [], "comment":"1문장"}}}},
-  "finish":        {{{{"corrections": [], "comment":"1문장"}}}},
+{{
+  "address":       {{"corrections": [{{"joint":"관절","direction":"방향","comment":"1문장"}}], "comment":"1문장"}},
+  "takeaway":      {{"corrections": [], "comment":"1문장"}},
+  "top":           {{"corrections": [], "comment":"1문장"}},
+  "transition":    {{"corrections": [], "comment":"1문장"}},
+  "impact":        {{"corrections": [], "comment":"1문장"}},
+  "followthrough": {{"corrections": [], "comment":"1문장"}},
+  "finish":        {{"corrections": [], "comment":"1문장"}},
   "today_focus": "오늘 딱 하나의 핵심 교정 (15자 이내)",
-  "drill": {{{{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}}}
-}}}}""".strip()
+  "drill": {{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}
+}}""".strip()
 
 
 # ─── 메인 함수 ───────────────────────────────────────────────────────

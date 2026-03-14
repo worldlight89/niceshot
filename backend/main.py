@@ -47,6 +47,34 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/test-gemini")
+def test_gemini() -> dict[str, Any]:
+    """Gemini 연결 테스트"""
+    info: dict[str, Any] = {
+        "VERTEX_PROJECT_ID": os.environ.get("VERTEX_PROJECT_ID", ""),
+        "VERTEX_LOCATION": os.environ.get("VERTEX_LOCATION", ""),
+        "VERTEX_MODEL": os.environ.get("VERTEX_MODEL", ""),
+        "GOOGLE_APPLICATION_CREDENTIALS": os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
+        "creds_file_exists": os.path.exists(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")),
+    }
+    try:
+        import vertexai
+        from vertexai.generative_models import GenerativeModel
+        project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
+        location = os.environ.get("VERTEX_LOCATION", "us-central1").strip() or "us-central1"
+        model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
+        vertexai.init(project=project, location=location)
+        model = GenerativeModel(model_name)
+        resp = model.generate_content("안녕. 한 문장으로 대답해.")
+        info["response"] = resp.text
+        info["status"] = "SUCCESS"
+    except Exception as e:
+        info["status"] = "FAILED"
+        info["error_type"] = type(e).__name__
+        info["error"] = str(e)
+    return info
+
+
 @app.post("/api/analyze")
 async def analyze(
     clips: list[UploadFile] = File(default=[]),
@@ -93,9 +121,13 @@ async def analyze(
             frame_set = {}
 
         frames = {
-            "address": frame_set.get("address", {}),
-            "top":     frame_set.get("top",     {}),
-            "impact":  frame_set.get("impact",  {}),
+            "address":       frame_set.get("address", {}),
+            "takeaway":      frame_set.get("takeaway", {}),
+            "top":           frame_set.get("top", {}),
+            "transition":    frame_set.get("transition", {}),
+            "impact":        frame_set.get("impact", {}),
+            "followthrough": frame_set.get("followthrough", {}),
+            "finish":        frame_set.get("finish", {}),
         }
 
         coaching = coach_with_gemini(
