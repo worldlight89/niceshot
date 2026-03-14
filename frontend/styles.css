@@ -892,25 +892,55 @@ html, body {
 
 /* 교정 주석 텍스트 */
 .slowmo-annotation {
-  padding: 6px 16px 0;
+  padding: 10px 16px 4px;
   flex-shrink: 0;
-  min-height: 28px;
+  min-height: 32px;
 }
 
 .annotation-text {
-  color: rgba(255,255,255,0.92);
-  font-size: 0.82rem;
+  background: rgba(30,30,30,0.85);
+  color: #fff;
+  font-size: 0.88rem;
   font-weight: 600;
-  line-height: 1.45;
-  text-align: center;
+  line-height: 1.5;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border-left: 4px solid #e74c3c;
   animation: anno-fade-in 0.3s ease-out;
+}
+
+.anno-num {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  background: #e74c3c;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.anno-phase {
+  display: inline-block;
+  background: rgba(231,76,60,0.2);
+  color: #e74c3c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  vertical-align: middle;
 }
 
 .annotation-ok {
   color: #4fc3f7;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 600;
   text-align: center;
+  padding: 8px;
   animation: anno-fade-in 0.3s ease-out;
 }
 
