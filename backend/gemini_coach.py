@@ -37,10 +37,9 @@ def _call_gemini(content_parts: list) -> str | None:
         )
         creds.refresh(gauth_req.Request())
 
-        model = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-        # 버전 번호 제거 (gemini-2.0-flash-001 → gemini-2.0-flash)
-        if model.endswith("-001") or model.endswith("-002"):
-            model = model.rsplit("-", 1)[0]
+        model = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+        if model.startswith("gemini-2.0"):
+            model = "gemini-2.5-flash"
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         headers = {

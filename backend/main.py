@@ -55,7 +55,7 @@ def test_gemini() -> dict[str, Any]:
     creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
     project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
     location = os.environ.get("VERTEX_LOCATION", "us-central1").strip()
-    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip()
+    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.5-flash").strip()
 
     info: dict[str, Any] = {
         "project": project,
@@ -104,10 +104,8 @@ def test_gemini() -> dict[str, Any]:
     }
 
     tests = [
-        ("vertex-v1", f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/gemini-2.0-flash-001:generateContent"),
-        ("vertex-v1beta1", f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/publishers/google/models/gemini-2.0-flash-001:generateContent"),
-        ("genai-v1beta", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"),
-        ("genai-v1beta-sa", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"),
+        ("vertex-v1", f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/gemini-2.5-flash:generateContent"),
+        ("genai-v1beta", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"),
     ]
 
     results_list = []
