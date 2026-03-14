@@ -27,7 +27,8 @@ if _sa_json:
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from gemini_coach import coach_with_video
+from gemini_coach import generate_phase_comments
+from rule_engine import analyze_swing
 
 app = FastAPI(title="Golf Swing Coach – NICESHOT")
 
@@ -134,7 +135,7 @@ async def analyze(
     notes: str = Form(default=""),
     club: str = Form(default=""),
 ) -> dict[str, Any]:
-    """영상 1개 + MediaPipe 메트릭을 받아 Gemini로 스윙 분석."""
+    """영상 + MediaPipe 메트릭 → 규칙엔진(점수/교정) + Gemini(코멘트)."""
     if not clips:
         return {"error": "No video provided", "coaching": "", "summary": ""}
 
@@ -148,12 +149,49 @@ async def analyze(
     except Exception:
         metrics = {}
 
-    result = coach_with_video(
+    # 1) Rule engine — deterministic score, faults, corrections
+    rule_result = analyze_swing(metrics)
+
+    # 2) Non-swing → return immediately (skip Gemini)
+    if not rule_result["is_swing"]:
+        coaching = json.dumps(
+            {
+                "score": -1,
+                "problems": [],
+                "phase_comments": {},
+                "drill": {},
+                "corrections": {},
+                "reason": rule_result.get(
+                    "reason", "골프 스윙이 감지되지 않았습니다."
+                ),
+            },
+            ensure_ascii=False,
+        )
+        return {"summary": "스윙 미감지", "coaching": coaching}
+
+    # 3) Gemini — natural language phase comments only
+    gemini = generate_phase_comments(
         video_bytes=video_bytes,
         video_mime=video_mime,
         notes=notes,
         club=club,
         metrics=metrics,
+        rule_result=rule_result,
     )
 
-    return {"summary": result.summary, "coaching": result.coaching}
+    # 4) Merge rule engine + Gemini results
+    coaching = json.dumps(
+        {
+            "score": rule_result["score"],
+            "problems": rule_result["problems"],
+            "phase_comments": gemini.phase_comments,
+            "drill": rule_result["drill"],
+            "corrections": rule_result["corrections"],
+        },
+        ensure_ascii=False,
+    )
+
+    return {
+        "summary": f"스윙 점수: {rule_result['score']}/100",
+        "coaching": coaching,
+    }

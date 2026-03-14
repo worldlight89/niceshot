@@ -353,7 +353,7 @@ function extractDetailedMetrics(lms) {
 
 /* ── 저장된 포즈 프레임에서 핵심 구간 메트릭 추출 ── */
 function extractMetricsFromPoseFrames() {
-  var keyTimes = { address: 0.3, top: 1.3, impact: 2.3 };
+  var keyTimes = { address: 0.3, top: 1.3, impact: 2.3, followthrough: 2.8 };
   var metrics = {};
   var keys = Object.keys(keyTimes);
   for (var k = 0; k < keys.length; k++) {
@@ -579,6 +579,9 @@ function showScoreCard(data) {
     html += '</div>';
   }
 
+  /* 교정 영상 보기 버튼 */
+  html += '<button class="btn btn-outline" onclick="showSlowmoPlayer()" style="margin-top:12px;width:100%">🎬 교정 영상 보기</button>';
+
   wrap.innerHTML = html;
 
   /* 링 애니메이션 */
@@ -668,6 +671,32 @@ function findClosestPoseFrame(time) {
   return (closest && minDist < 0.3) ? closest : null;
 }
 
+/* ── 각도 기반 교정 위치 계산 ── */
+function computeAngleCorrection(lms, corr, w, h) {
+  var vertex = lms[corr.vertex_idx];
+  var anchor = lms[corr.anchor_idx];
+  var endpoint = lms[corr.endpoint_idx];
+  if (!vertex || !anchor || !endpoint) return null;
+  if (vertex.visibility < 0.25 || endpoint.visibility < 0.25) return null;
+
+  var diffDeg = corr.target_deg - corr.current_deg;
+  var vex = endpoint.x - vertex.x;
+  var vey = endpoint.y - vertex.y;
+  var vax = anchor.x - vertex.x;
+  var vay = anchor.y - vertex.y;
+
+  var cross = vax * vey - vay * vex;
+  var sign = cross >= 0 ? 1 : -1;
+  var rad = diffDeg * sign * Math.PI / 180;
+  var cosR = Math.cos(rad);
+  var sinR = Math.sin(rad);
+
+  return {
+    x: (vertex.x + vex * cosR - vey * sinR) * w,
+    y: (vertex.y + vex * sinR + vey * cosR) * h
+  };
+}
+
 function startSlowmoOverlay() {
   var video = document.getElementById('slowmoVideo');
   var canvas = document.getElementById('slowmoCanvas');
@@ -704,19 +733,20 @@ function startSlowmoOverlay() {
       var w = canvas.width, h = canvas.height;
       var lms = poseFrame.landmarks;
 
-      /* 현재 구간의 문제 관절 */
-      var problemMap = {};
-      if (state.analysisResult && state.analysisResult.problems) {
-        for (var pi = 0; pi < state.analysisResult.problems.length; pi++) {
-          var prob = state.analysisResult.problems[pi];
-          if (prob.phase === phase.key) {
-            var jIdx = JOINT_NAMES.indexOf(prob.joint);
-            if (jIdx >= 0) problemMap[jIdx] = prob.direction || '';
-          }
-        }
+      /* 현재 구간의 교정 데이터 (규칙 엔진 기반) */
+      var phaseCorr = [];
+      if (state.analysisResult && state.analysisResult.corrections) {
+        phaseCorr = state.analysisResult.corrections[phase.key] || [];
       }
 
-      var hasProblemPhase = Object.keys(problemMap).length > 0;
+      var corrJoints = {};
+      for (var ci2 = 0; ci2 < phaseCorr.length; ci2++) {
+        var c = phaseCorr[ci2];
+        corrJoints[c.joint_idx] = c;
+        if (c.vertex_idx !== undefined) corrJoints[c.vertex_idx] = c;
+        if (c.endpoint_idx !== undefined) corrJoints[c.endpoint_idx] = c;
+      }
+      var hasCorr = phaseCorr.length > 0;
 
       /* 스켈레톤 선 */
       ctx.lineWidth = Math.max(2, w * 0.005);
@@ -727,8 +757,8 @@ function startSlowmoOverlay() {
         ctx.beginPath();
         ctx.moveTo(a.x * w, a.y * h);
         ctx.lineTo(b.x * w, b.y * h);
-        var connHasProblem = (conn[0] in problemMap) || (conn[1] in problemMap);
-        ctx.strokeStyle = connHasProblem ? 'rgba(255,80,80,0.85)' : 'rgba(255,255,255,0.5)';
+        var connProblem = (conn[0] in corrJoints) || (conn[1] in corrJoints);
+        ctx.strokeStyle = connProblem ? 'rgba(255,80,80,0.85)' : 'rgba(255,255,255,0.5)';
         ctx.stroke();
       }
 
@@ -737,52 +767,59 @@ function startSlowmoOverlay() {
       for (var li = 0; li < lms.length; li++) {
         var lm = lms[li];
         if (!lm || lm.visibility < 0.25) continue;
-        var cx = lm.x * w, cy = lm.y * h;
-        var isProblem = li in problemMap;
+        var jx = lm.x * w, jy = lm.y * h;
+        var isCorr = li in corrJoints;
 
         ctx.beginPath();
-        ctx.arc(cx, cy, isProblem ? DOT_R * 1.5 : DOT_R, 0, Math.PI * 2);
-        ctx.fillStyle = isProblem ? '#FF4444' : 'rgba(255,255,255,0.7)';
+        ctx.arc(jx, jy, isCorr ? DOT_R * 1.5 : DOT_R, 0, Math.PI * 2);
+        ctx.fillStyle = isCorr ? '#FF4444' : 'rgba(255,255,255,0.7)';
         ctx.fill();
+      }
 
-        if (isProblem) {
-          /* 빨간 강조 링 */
+      /* 교정 포인트 (초록 위치) */
+      for (var ci3 = 0; ci3 < phaseCorr.length; ci3++) {
+        var corr = phaseCorr[ci3];
+        var jLm = lms[corr.joint_idx];
+        if (!jLm || jLm.visibility < 0.25) continue;
+        var rx = jLm.x * w, ry = jLm.y * h;
+
+        /* 빨간 강조 링 */
+        ctx.beginPath();
+        ctx.arc(rx, ry, DOT_R * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,68,68,0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        /* 초록 교정 위치 */
+        var greenPos = null;
+        if (corr.type === 'angle' && corr.vertex_idx !== undefined) {
+          greenPos = computeAngleCorrection(lms, corr, w, h);
+        }
+
+        if (greenPos) {
+          var epLm = lms[corr.endpoint_idx];
+          var epX = epLm ? epLm.x * w : rx;
+          var epY = epLm ? epLm.y * h : ry;
+
+          ctx.save();
+          ctx.setLineDash([6, 4]);
           ctx.beginPath();
-          ctx.arc(cx, cy, DOT_R * 3, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(255,68,68,0.5)';
+          ctx.moveTo(epX, epY);
+          ctx.lineTo(greenPos.x, greenPos.y);
+          ctx.strokeStyle = '#44FF88';
           ctx.lineWidth = 2;
           ctx.stroke();
+          ctx.restore();
 
-          /* 초록 교정 위치 */
-          var dir = problemMap[li];
-          var OFFSET = w * 0.06;
-          var dx = 0, dy = 0;
-          if (dir === 'up') dy = -OFFSET;
-          else if (dir === 'down') dy = OFFSET;
-          else if (dir === 'left' || dir === 'back') dx = -OFFSET;
-          else if (dir === 'right' || dir === 'forward') dx = OFFSET;
-
-          if (dx !== 0 || dy !== 0) {
-            ctx.save();
-            ctx.setLineDash([6, 4]);
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + dx, cy + dy);
-            ctx.strokeStyle = '#44FF88';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
-
-            ctx.beginPath();
-            ctx.arc(cx + dx, cy + dy, DOT_R * 1.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#44FF88';
-            ctx.fill();
-          }
+          ctx.beginPath();
+          ctx.arc(greenPos.x, greenPos.y, DOT_R * 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#44FF88';
+          ctx.fill();
         }
       }
 
-      /* 문제 구간 표시 배지 */
-      if (hasProblemPhase) {
+      /* 문제 구간 배지 */
+      if (hasCorr) {
         ctx.fillStyle = 'rgba(255,68,68,0.85)';
         ctx.font = 'bold ' + Math.max(14, w * 0.03) + 'px sans-serif';
         ctx.textAlign = 'left';
