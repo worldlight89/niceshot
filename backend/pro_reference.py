@@ -20,7 +20,100 @@ from __future__ import annotations
 #   outside warn               →  fault deduction
 # ---------------------------------------------------------------------------
 
-PRO_ANGLES: dict[str, dict[str, dict]] = {
+# ---------------------------------------------------------------------------
+# Club name → category mapping
+# ---------------------------------------------------------------------------
+
+CLUB_CATEGORY_MAP: dict[str, str] = {
+    "드라이버": "driver", "1W": "driver", "Driver": "driver",
+    "3W": "fairway", "5W": "fairway",
+    "유틸리티": "fairway", "하이브리드": "fairway", "UT": "fairway",
+    "3I": "long_iron", "4I": "long_iron", "5I": "long_iron",
+    "6I": "mid_iron", "7I": "mid_iron", "8I": "mid_iron",
+    "9I": "short_iron", "PW": "short_iron",
+    "SW": "wedge", "LW": "wedge", "AW": "wedge",
+    "52": "wedge", "56": "wedge", "58": "wedge", "60": "wedge",
+    "PT": "putter",
+}
+
+DEFAULT_CLUB_CATEGORY = "mid_iron"
+
+
+def get_club_category(club_name: str) -> str:
+    if not club_name:
+        return DEFAULT_CLUB_CATEGORY
+    name = club_name.strip()
+    if name in CLUB_CATEGORY_MAP:
+        return CLUB_CATEGORY_MAP[name]
+    for key, cat in CLUB_CATEGORY_MAP.items():
+        if key in name:
+            return cat
+    return DEFAULT_CLUB_CATEGORY
+
+
+# ---------------------------------------------------------------------------
+# Club-specific PRO_ANGLES
+# ---------------------------------------------------------------------------
+
+_ANGLES_DRIVER: dict[str, dict[str, dict]] = {
+    "address": {
+        "척추기울기_deg":      {"ideal": 33,  "good": (28, 38),  "warn": (24, 42)},
+        "어깨기울기_deg":      {"ideal": -3,  "good": (-8, 2),   "warn": (-12, 8)},
+        "왼무릎굴곡_deg":     {"ideal": 158, "good": (150, 168), "warn": (142, 172)},
+        "오른무릎굴곡_deg":    {"ideal": 158, "good": (150, 168), "warn": (142, 172)},
+        "어깨_힙_회전차_deg":  {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+    },
+    "top": {
+        "왼팔각도_deg":        {"ideal": 178, "good": (160, 180), "warn": (145, 160)},
+        "오른팔각도_deg":      {"ideal": 90,  "good": (80, 100),  "warn": (65, 115)},
+        "어깨_힙_회전차_deg":  {"ideal": 55,  "good": (48, 62),   "warn": (38, 48)},
+        "척추기울기_deg":      {"ideal": 33,  "good": (26, 40),   "warn": (22, 45)},
+    },
+    "impact": {
+        "왼무릎굴곡_deg":     {"ideal": 168, "good": (158, 178), "warn": (148, 180)},
+        "척추기울기_deg":      {"ideal": 33,  "good": (26, 40),   "warn": (22, 45)},
+        "오른팔각도_deg":      {"ideal": 150, "good": (130, 165), "warn": (110, 175)},
+        "왼팔각도_deg":        {"ideal": 172, "good": (162, 180), "warn": (152, 180)},
+    },
+    "followthrough": {
+        "왼팔각도_deg":        {"ideal": 172, "good": (155, 180), "warn": (135, 155)},
+        "척추기울기_deg":      {"ideal": 30,  "good": (18, 45),   "warn": (8, 55)},
+        "오른무릎굴곡_deg":    {"ideal": 135, "good": (115, 155), "warn": (95, 168)},
+        "오른팔각도_deg":      {"ideal": 168, "good": (155, 180), "warn": (140, 180)},
+    },
+}
+
+_ANGLES_FAIRWAY: dict[str, dict[str, dict]] = {
+    "address": {
+        "척추기울기_deg":      {"ideal": 35,  "good": (30, 40),  "warn": (26, 45)},
+        "어깨기울기_deg":      {"ideal": -1,  "good": (-6, 4),   "warn": (-10, 10)},
+        "왼무릎굴곡_deg":     {"ideal": 160, "good": (153, 170), "warn": (145, 175)},
+        "오른무릎굴곡_deg":    {"ideal": 160, "good": (153, 170), "warn": (145, 175)},
+        "어깨_힙_회전차_deg":  {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+    },
+    "top": {
+        "왼팔각도_deg":        {"ideal": 176, "good": (158, 180), "warn": (142, 158)},
+        "오른팔각도_deg":      {"ideal": 90,  "good": (80, 100),  "warn": (65, 115)},
+        "어깨_힙_회전차_deg":  {"ideal": 52,  "good": (46, 58),   "warn": (35, 46)},
+        "척추기울기_deg":      {"ideal": 35,  "good": (28, 42),   "warn": (24, 48)},
+    },
+    "impact": {
+        "왼무릎굴곡_deg":     {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+        "척추기울기_deg":      {"ideal": 35,  "good": (28, 42),   "warn": (24, 48)},
+        "오른팔각도_deg":      {"ideal": 150, "good": (130, 165), "warn": (110, 175)},
+        "왼팔각도_deg":        {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+    },
+    "followthrough": {
+        "왼팔각도_deg":        {"ideal": 170, "good": (152, 180), "warn": (132, 152)},
+        "척추기울기_deg":      {"ideal": 32,  "good": (18, 48),   "warn": (8, 58)},
+        "오른무릎굴곡_deg":    {"ideal": 138, "good": (118, 158), "warn": (98, 170)},
+        "오른팔각도_deg":      {"ideal": 166, "good": (152, 180), "warn": (138, 180)},
+    },
+}
+
+_ANGLES_LONG_IRON = _ANGLES_FAIRWAY
+
+_ANGLES_MID_IRON: dict[str, dict[str, dict]] = {
     "address": {
         "척추기울기_deg":      {"ideal": 38,  "good": (33, 43),  "warn": (28, 48)},
         "어깨기울기_deg":      {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
@@ -47,6 +140,106 @@ PRO_ANGLES: dict[str, dict[str, dict]] = {
         "오른팔각도_deg":      {"ideal": 165, "good": (150, 180), "warn": (135, 180)},
     },
 }
+
+_ANGLES_SHORT_IRON: dict[str, dict[str, dict]] = {
+    "address": {
+        "척추기울기_deg":      {"ideal": 40,  "good": (35, 46),  "warn": (30, 50)},
+        "어깨기울기_deg":      {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+        "왼무릎굴곡_deg":     {"ideal": 164, "good": (156, 172), "warn": (148, 176)},
+        "오른무릎굴곡_deg":    {"ideal": 164, "good": (156, 172), "warn": (148, 176)},
+        "어깨_힙_회전차_deg":  {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+    },
+    "top": {
+        "왼팔각도_deg":        {"ideal": 174, "good": (152, 180), "warn": (138, 152)},
+        "오른팔각도_deg":      {"ideal": 90,  "good": (80, 100),  "warn": (65, 115)},
+        "어깨_힙_회전차_deg":  {"ideal": 45,  "good": (38, 52),   "warn": (25, 38)},
+        "척추기울기_deg":      {"ideal": 40,  "good": (32, 48),   "warn": (28, 52)},
+    },
+    "impact": {
+        "왼무릎굴곡_deg":     {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+        "척추기울기_deg":      {"ideal": 40,  "good": (32, 48),   "warn": (28, 52)},
+        "오른팔각도_deg":      {"ideal": 148, "good": (128, 162), "warn": (108, 172)},
+        "왼팔각도_deg":        {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+    },
+    "followthrough": {
+        "왼팔각도_deg":        {"ideal": 168, "good": (148, 180), "warn": (128, 148)},
+        "척추기울기_deg":      {"ideal": 38,  "good": (22, 52),   "warn": (12, 62)},
+        "오른무릎굴곡_deg":    {"ideal": 142, "good": (122, 160), "warn": (102, 172)},
+        "오른팔각도_deg":      {"ideal": 162, "good": (148, 180), "warn": (132, 180)},
+    },
+}
+
+_ANGLES_WEDGE: dict[str, dict[str, dict]] = {
+    "address": {
+        "척추기울기_deg":      {"ideal": 42,  "good": (37, 48),  "warn": (32, 52)},
+        "어깨기울기_deg":      {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+        "왼무릎굴곡_deg":     {"ideal": 165, "good": (158, 174), "warn": (150, 178)},
+        "오른무릎굴곡_deg":    {"ideal": 165, "good": (158, 174), "warn": (150, 178)},
+        "어깨_힙_회전차_deg":  {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+    },
+    "top": {
+        "왼팔각도_deg":        {"ideal": 172, "good": (148, 180), "warn": (135, 148)},
+        "오른팔각도_deg":      {"ideal": 92,  "good": (80, 105),  "warn": (65, 118)},
+        "어깨_힙_회전차_deg":  {"ideal": 40,  "good": (32, 48),   "warn": (22, 32)},
+        "척추기울기_deg":      {"ideal": 42,  "good": (34, 50),   "warn": (30, 54)},
+    },
+    "impact": {
+        "왼무릎굴곡_deg":     {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+        "척추기울기_deg":      {"ideal": 42,  "good": (34, 50),   "warn": (30, 54)},
+        "오른팔각도_deg":      {"ideal": 145, "good": (125, 160), "warn": (105, 170)},
+        "왼팔각도_deg":        {"ideal": 168, "good": (158, 180), "warn": (148, 180)},
+    },
+    "followthrough": {
+        "왼팔각도_deg":        {"ideal": 165, "good": (145, 180), "warn": (125, 145)},
+        "척추기울기_deg":      {"ideal": 40,  "good": (25, 54),   "warn": (15, 64)},
+        "오른무릎굴곡_deg":    {"ideal": 148, "good": (128, 164), "warn": (108, 175)},
+        "오른팔각도_deg":      {"ideal": 160, "good": (145, 180), "warn": (130, 180)},
+    },
+}
+
+_ANGLES_PUTTER: dict[str, dict[str, dict]] = {
+    "address": {
+        "척추기울기_deg":      {"ideal": 45,  "good": (40, 52),  "warn": (35, 56)},
+        "어깨기울기_deg":      {"ideal": 0,   "good": (-5, 5),   "warn": (-10, 10)},
+        "왼무릎굴곡_deg":     {"ideal": 168, "good": (160, 176), "warn": (152, 180)},
+        "오른무릎굴곡_deg":    {"ideal": 168, "good": (160, 176), "warn": (152, 180)},
+        "어깨_힙_회전차_deg":  {"ideal": 0,   "good": (-3, 3),   "warn": (-6, 6)},
+    },
+    "top": {
+        "왼팔각도_deg":        {"ideal": 170, "good": (155, 180), "warn": (140, 155)},
+        "오른팔각도_deg":      {"ideal": 165, "good": (150, 180), "warn": (130, 150)},
+        "어깨_힙_회전차_deg":  {"ideal": 8,   "good": (3, 15),    "warn": (0, 20)},
+        "척추기울기_deg":      {"ideal": 45,  "good": (40, 52),   "warn": (35, 56)},
+    },
+    "impact": {
+        "왼무릎굴곡_deg":     {"ideal": 168, "good": (160, 176), "warn": (152, 180)},
+        "척추기울기_deg":      {"ideal": 45,  "good": (40, 52),   "warn": (35, 56)},
+        "오른팔각도_deg":      {"ideal": 165, "good": (150, 180), "warn": (130, 180)},
+        "왼팔각도_deg":        {"ideal": 170, "good": (160, 180), "warn": (150, 180)},
+    },
+    "followthrough": {
+        "왼팔각도_deg":        {"ideal": 170, "good": (155, 180), "warn": (140, 155)},
+        "척추기울기_deg":      {"ideal": 45,  "good": (40, 52),   "warn": (35, 56)},
+        "오른무릎굴곡_deg":    {"ideal": 168, "good": (160, 176), "warn": (152, 180)},
+        "오른팔각도_deg":      {"ideal": 165, "good": (150, 180), "warn": (130, 180)},
+    },
+}
+
+CLUB_PRO_ANGLES: dict[str, dict[str, dict[str, dict]]] = {
+    "driver":     _ANGLES_DRIVER,
+    "fairway":    _ANGLES_FAIRWAY,
+    "long_iron":  _ANGLES_LONG_IRON,
+    "mid_iron":   _ANGLES_MID_IRON,
+    "short_iron": _ANGLES_SHORT_IRON,
+    "wedge":      _ANGLES_WEDGE,
+    "putter":     _ANGLES_PUTTER,
+}
+
+PRO_ANGLES = _ANGLES_MID_IRON
+
+
+def get_pro_angles(club_category: str) -> dict[str, dict[str, dict]]:
+    return CLUB_PRO_ANGLES.get(club_category, _ANGLES_MID_IRON)
 
 # ---------------------------------------------------------------------------
 # Maps metric name → MediaPipe landmark triplet for angle-based corrections.
@@ -131,6 +324,17 @@ DEDUCTION_RULES: list[dict] = [
             {"below": 30, "deduction": 12, "severity": "fault"},
             {"below": 45, "deduction": 5,  "severity": "warning"},
         ],
+        "club_tiers": {
+            "driver":     [{"below": 38, "deduction": 12, "severity": "fault"},
+                           {"below": 48, "deduction": 5,  "severity": "warning"}],
+            "fairway":    [{"below": 35, "deduction": 12, "severity": "fault"},
+                           {"below": 46, "deduction": 5,  "severity": "warning"}],
+            "short_iron": [{"below": 25, "deduction": 10, "severity": "fault"},
+                           {"below": 38, "deduction": 4,  "severity": "warning"}],
+            "wedge":      [{"below": 22, "deduction": 8,  "severity": "fault"},
+                           {"below": 32, "deduction": 3,  "severity": "warning"}],
+            "putter":     [{"below": 0,  "deduction": 0,  "severity": "warning"}],
+        },
         "label_ko": "X-Factor 부족 (상하체 분리 부족)",
         "friendly_ko": "어깨 회전이 부족해요. 하체는 고정하고 어깨를 더 크게 돌려보세요.",
         "joint": "left_shoulder",
@@ -144,6 +348,9 @@ DEDUCTION_RULES: list[dict] = [
         "fault_value": "손목이 어깨 아래",
         "deduction": 8,
         "severity": "fault",
+        "club_deduction": {
+            "wedge": 3, "short_iron": 5, "putter": 0,
+        },
         "label_ko": "백스윙 높이 부족",
         "friendly_ko": "백스윙이 너무 낮아요. 손이 어깨 위로 올라가도록 더 높이 올려보세요.",
         "joint": "right_wrist",
@@ -171,10 +378,17 @@ DEDUCTION_RULES: list[dict] = [
         "metric": "척추기울기_deg",
         "phase": "address",
         "range": (28, 48),
+        "club_range": {
+            "driver":     (24, 42),
+            "fairway":    (26, 45),
+            "short_iron": (30, 50),
+            "wedge":      (32, 52),
+            "putter":     (35, 56),
+        },
         "deduction": 5,
         "severity": "warning",
         "label_ko": "어드레스 척추각 이상",
-        "friendly_ko": "준비 자세에서 상체 숙임이 부자연스러워요. 편하게 35~45도로 숙여보세요.",
+        "friendly_ko": "준비 자세에서 상체 숙임이 부자연스러워요. 클럽에 맞는 자연스러운 각도로 숙여보세요.",
         "joint": "left_hip",
         "joint_idx": 23,
     },
@@ -240,6 +454,16 @@ DEDUCTION_RULES: list[dict] = [
             {"above": 65, "deduction": 10, "severity": "fault"},
             {"above": 58, "deduction": 4,  "severity": "warning"},
         ],
+        "club_tiers": {
+            "driver":     [{"above": 70, "deduction": 10, "severity": "fault"},
+                           {"above": 62, "deduction": 4,  "severity": "warning"}],
+            "short_iron": [{"above": 58, "deduction": 10, "severity": "fault"},
+                           {"above": 52, "deduction": 4,  "severity": "warning"}],
+            "wedge":      [{"above": 52, "deduction": 10, "severity": "fault"},
+                           {"above": 45, "deduction": 4,  "severity": "warning"}],
+            "putter":     [{"above": 20, "deduction": 8,  "severity": "fault"},
+                           {"above": 15, "deduction": 3,  "severity": "warning"}],
+        },
         "label_ko": "과도한 상체 회전",
         "friendly_ko": "상체가 너무 많이 돌아갔어요. 유연성 범위 안에서 자연스럽게 회전하세요.",
         "joint": "left_shoulder",
@@ -297,6 +521,11 @@ DEDUCTION_RULES: list[dict] = [
         "metric": "척추기울기_deg",
         "phase": "followthrough",
         "range": (10, 55),
+        "club_range": {
+            "driver": (8, 55),
+            "wedge":  (15, 64),
+            "putter": (35, 56),
+        },
         "deduction": 6,
         "severity": "warning",
         "label_ko": "팔로스루 자세 붕괴",
@@ -381,6 +610,11 @@ DEDUCTION_RULES: list[dict] = [
             {"above": 165, "deduction": 10, "severity": "fault"},
             {"above": 155, "deduction": 4,  "severity": "warning"},
         ],
+        "club_tiers": {
+            "wedge":  [{"above": 172, "deduction": 6, "severity": "fault"},
+                       {"above": 165, "deduction": 2, "severity": "warning"}],
+            "putter": [{"above": 180, "deduction": 0, "severity": "warning"}],
+        },
         "label_ko": "체중 이동 부족 (뒷발 잔류)",
         "friendly_ko": "피니시에서 체중이 뒷발에 남아 있어요. 스윙 후 오른발 뒤꿈치가 들릴 정도로 체중을 앞으로 옮기세요.",
         "joint": "right_knee",

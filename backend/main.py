@@ -149,8 +149,8 @@ async def analyze(
     except Exception:
         metrics = {}
 
-    # 1) Rule engine — deterministic score, faults, corrections
-    rule_result = analyze_swing(metrics)
+    # 1) Rule engine — deterministic score, faults, corrections (club-specific)
+    rule_result = analyze_swing(metrics, club=club)
 
     # 2) Non-swing → return immediately (skip Gemini)
     if not rule_result["is_swing"]:

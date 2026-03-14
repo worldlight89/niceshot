@@ -15,21 +15,25 @@ from pro_reference import (
     DEDUCTION_RULES,
     DRILL_MAP,
     PRO_ANGLES,
+    get_club_category,
+    get_pro_angles,
 )
 
 
-def analyze_swing(metrics: dict[str, Any]) -> dict[str, Any]:
+def analyze_swing(metrics: dict[str, Any], club: str = "") -> dict[str, Any]:
     """
     Main entry point.
 
     Args:
         metrics: dict with keys ``address``, ``top``, ``impact``,
                  ``followthrough`` (optional), ``swing_indicators``.
+        club: club name string (e.g. "드라이버", "7I", "SW").
 
     Returns:
         dict with ``is_swing``, ``score``, ``faults``, ``problems``,
-        ``corrections``, ``drill``, ``phase_grades``.
+        ``corrections``, ``drill``, ``phase_grades``, ``club_category``.
     """
+    club_cat = get_club_category(club)
     indicators = metrics.get("swing_indicators", {})
 
     if not _is_valid_swing(indicators):
@@ -42,9 +46,11 @@ def analyze_swing(metrics: dict[str, Any]) -> dict[str, Any]:
             "corrections": {},
             "drill": {},
             "phase_grades": {},
+            "club_category": club_cat,
         }
 
-    faults = _check_all_rules(metrics)
+    angles = get_pro_angles(club_cat)
+    faults = _check_all_rules(metrics, club_cat, angles)
 
     total_deduction = sum(f["deduction"] for f in faults)
     score = max(0, 100 - total_deduction)
@@ -57,6 +63,7 @@ def analyze_swing(metrics: dict[str, Any]) -> dict[str, Any]:
         "corrections": _build_corrections(faults, metrics),
         "drill": _pick_drill(faults),
         "phase_grades": _grade_phases(faults),
+        "club_category": club_cat,
     }
 
 
@@ -76,33 +83,55 @@ def _is_valid_swing(indicators: dict) -> bool:
 
 # ── rule checking ────────────────────────────────────────────────────
 
-def _check_all_rules(metrics: dict) -> list[dict]:
+def _check_all_rules(
+    metrics: dict, club_cat: str, angles: dict,
+) -> list[dict]:
     faults: list[dict] = []
     for rule in DEDUCTION_RULES:
-        fault = _check_rule(rule, metrics)
+        fault = _check_rule(rule, metrics, club_cat, angles)
         if fault:
             faults.append(fault)
     return faults
 
 
-def _check_rule(rule: dict, metrics: dict) -> dict | None:
+def _get_tiers(rule: dict, club_cat: str) -> list[dict]:
+    """Return club-specific tiers if available, else default tiers."""
+    club_tiers = rule.get("club_tiers", {})
+    return club_tiers.get(club_cat, rule.get("tiers", []))
+
+
+def _get_range(rule: dict, club_cat: str) -> tuple:
+    """Return club-specific range if available, else default range."""
+    club_range = rule.get("club_range", {})
+    return club_range.get(club_cat, rule.get("range", (0, 360)))
+
+
+def _get_deduction(rule: dict, club_cat: str) -> int:
+    """Return club-specific deduction if available, else default."""
+    club_ded = rule.get("club_deduction", {})
+    return club_ded.get(club_cat, rule.get("deduction", 5))
+
+
+def _check_rule(
+    rule: dict, metrics: dict, club_cat: str, angles: dict,
+) -> dict | None:
     rtype = rule["type"]
     if rtype == "cross_phase":
-        return _check_cross_phase(rule, metrics)
+        return _check_cross_phase(rule, metrics, angles)
     if rtype == "below_threshold":
-        return _check_below_threshold(rule, metrics)
+        return _check_below_threshold(rule, metrics, club_cat, angles)
     if rtype == "above_threshold":
-        return _check_above_threshold(rule, metrics)
+        return _check_above_threshold(rule, metrics, club_cat, angles)
     if rtype == "equals":
-        return _check_equals(rule, metrics)
+        return _check_equals(rule, metrics, club_cat)
     if rtype == "out_of_range":
-        return _check_out_of_range(rule, metrics)
+        return _check_out_of_range(rule, metrics, club_cat, angles)
     if rtype == "min_cross_phase":
-        return _check_min_cross_phase(rule, metrics)
+        return _check_min_cross_phase(rule, metrics, club_cat)
     return None
 
 
-def _check_cross_phase(rule: dict, metrics: dict) -> dict | None:
+def _check_cross_phase(rule: dict, metrics: dict, angles: dict) -> dict | None:
     val_a = metrics.get(rule["phase_a"], {}).get(rule["metric"])
     val_b = metrics.get(rule["phase_b"], {}).get(rule["metric"])
     if val_a is None or val_b is None:
@@ -134,14 +163,19 @@ def _check_cross_phase(rule: dict, metrics: dict) -> dict | None:
     return None
 
 
-def _check_below_threshold(rule: dict, metrics: dict) -> dict | None:
+def _check_below_threshold(
+    rule: dict, metrics: dict, club_cat: str, angles: dict,
+) -> dict | None:
     val = metrics.get(rule["phase"], {}).get(rule["metric"])
     if val is None:
         return None
 
-    for tier in rule["tiers"]:
+    tiers = _get_tiers(rule, club_cat)
+    for tier in tiers:
+        if tier.get("deduction", 0) == 0:
+            continue
         if val < tier["below"]:
-            ref = PRO_ANGLES.get(rule["phase"], {}).get(rule["metric"], {})
+            ref = angles.get(rule["phase"], {}).get(rule["metric"], {})
             ideal = ref.get("ideal", tier["below"])
             return {
                 "id": rule["id"],
@@ -160,14 +194,19 @@ def _check_below_threshold(rule: dict, metrics: dict) -> dict | None:
     return None
 
 
-def _check_above_threshold(rule: dict, metrics: dict) -> dict | None:
+def _check_above_threshold(
+    rule: dict, metrics: dict, club_cat: str, angles: dict,
+) -> dict | None:
     val = metrics.get(rule["phase"], {}).get(rule["metric"])
     if val is None:
         return None
 
-    for tier in rule["tiers"]:
+    tiers = _get_tiers(rule, club_cat)
+    for tier in tiers:
+        if tier.get("deduction", 0) == 0:
+            continue
         if val > tier["above"]:
-            ref = PRO_ANGLES.get(rule["phase"], {}).get(rule["metric"], {})
+            ref = angles.get(rule["phase"], {}).get(rule["metric"], {})
             ideal = ref.get("ideal", tier["above"])
             return {
                 "id": rule["id"],
@@ -186,7 +225,9 @@ def _check_above_threshold(rule: dict, metrics: dict) -> dict | None:
     return None
 
 
-def _check_min_cross_phase(rule: dict, metrics: dict) -> dict | None:
+def _check_min_cross_phase(
+    rule: dict, metrics: dict, club_cat: str,
+) -> dict | None:
     """Triggers when cross-phase difference is TOO SMALL (lack of movement)."""
     val_a = metrics.get(rule["phase_a"], {}).get(rule["metric"])
     val_b = metrics.get(rule["phase_b"], {}).get(rule["metric"])
@@ -194,8 +235,11 @@ def _check_min_cross_phase(rule: dict, metrics: dict) -> dict | None:
         return None
 
     diff = abs(val_b - val_a)
+    tiers = _get_tiers(rule, club_cat)
 
-    for tier in rule["tiers"]:
+    for tier in tiers:
+        if tier.get("deduction", 0) == 0:
+            continue
         if diff < tier["max_diff"]:
             phase_key = rule.get("report_phase", rule["phase_b"])
             return {
@@ -219,9 +263,13 @@ def _check_min_cross_phase(rule: dict, metrics: dict) -> dict | None:
     return None
 
 
-def _check_equals(rule: dict, metrics: dict) -> dict | None:
+def _check_equals(rule: dict, metrics: dict, club_cat: str) -> dict | None:
     val = metrics.get(rule["phase"], {}).get(rule["metric"])
     if val is None:
+        return None
+
+    deduction = _get_deduction(rule, club_cat)
+    if deduction == 0:
         return None
 
     if str(val) == str(rule["fault_value"]):
@@ -232,7 +280,7 @@ def _check_equals(rule: dict, metrics: dict) -> dict | None:
             "joint_idx": rule["joint_idx"],
             "metric": rule["metric"],
             "current": val,
-            "deduction": rule["deduction"],
+            "deduction": deduction,
             "severity": rule["severity"],
             "label_ko": rule["label_ko"],
             "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
@@ -241,14 +289,16 @@ def _check_equals(rule: dict, metrics: dict) -> dict | None:
     return None
 
 
-def _check_out_of_range(rule: dict, metrics: dict) -> dict | None:
+def _check_out_of_range(
+    rule: dict, metrics: dict, club_cat: str, angles: dict,
+) -> dict | None:
     val = metrics.get(rule["phase"], {}).get(rule["metric"])
     if val is None:
         return None
 
-    lo, hi = rule["range"]
+    lo, hi = _get_range(rule, club_cat)
     if val < lo or val > hi:
-        ref = PRO_ANGLES.get(rule["phase"], {}).get(rule["metric"], {})
+        ref = angles.get(rule["phase"], {}).get(rule["metric"], {})
         ideal = ref.get("ideal", (lo + hi) / 2)
         return {
             "id": rule["id"],
