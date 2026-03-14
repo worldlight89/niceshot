@@ -675,6 +675,7 @@ html, body {
 .slowmo-video-wrap {
   position: relative;
   width: 100%;
+  cursor: pointer;
   flex: 1;
   min-height: 0;
   background: #000;
@@ -697,6 +698,64 @@ html, body {
   pointer-events: none;
 }
 
+/* 구간 뱃지 (영상 좌상단) */
+.phase-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 16px;
+  z-index: 15;
+  pointer-events: none;
+}
+.phase-badge:empty { display: none; }
+
+/* 구간 번호 인디케이터 (영상 우상단) */
+.phase-indicator {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.65);
+  color: rgba(255,255,255,0.8);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  z-index: 15;
+  pointer-events: none;
+}
+.phase-indicator:empty { display: none; }
+
+/* 탭 힌트 */
+.tap-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.9);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 24px;
+  z-index: 15;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.tap-hint.visible {
+  opacity: 1;
+  animation: tap-pulse 1.8s ease-in-out infinite;
+}
+@keyframes tap-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 /* 컨트롤 바 */
 .slowmo-controls {
   display: flex;
@@ -706,6 +765,30 @@ html, body {
   flex-shrink: 0;
 }
 
+/* phase dots on timeline */
+.phase-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.phase-dot {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.4);
+  transform: translate(-50%, -50%);
+  transition: background 0.3s;
+}
+.phase-dot.active { background: #4fc3f7; }
+.phase-dot.done { background: rgba(255,255,255,0.15); }
+
+.slowmo-play-btn-hidden {
+  display: none;
+}
+
+/* legacy - keep for compat but hidden */
 .slowmo-play-btn {
   width: 44px;
   height: 44px;
@@ -788,10 +871,9 @@ html, body {
   flex-shrink: 0;
 }
 
-/* 구간 정보 */
+/* 구간 정보 (hidden – replaced by overlay badge) */
 .slowmo-info {
-  padding: 8px 16px 4px;
-  flex-shrink: 0;
+  display: none;
 }
 
 .slowmo-phase {
@@ -808,26 +890,31 @@ html, body {
   min-height: 1.5em;
 }
 
-/* 교정 주석 텍스트 (영상 위 오버레이) */
+/* 교정 주석 텍스트 */
 .slowmo-annotation {
-  padding: 0 16px 12px;
+  padding: 6px 16px 0;
   flex-shrink: 0;
-  min-height: 52px;
+  min-height: 28px;
 }
 
 .annotation-text {
-  background: rgba(231,76,60,0.9);
-  color: #fff;
-  font-size: 0.88rem;
-  font-weight: 700;
-  line-height: 1.5;
-  padding: 10px 16px;
-  border-radius: 12px;
+  color: rgba(255,255,255,0.92);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  animation: anno-fade-in 0.3s ease-out;
+}
+
+.annotation-ok {
+  color: #4fc3f7;
+  font-size: 0.82rem;
+  font-weight: 600;
   text-align: center;
   animation: anno-fade-in 0.3s ease-out;
 }
 
 @keyframes anno-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }

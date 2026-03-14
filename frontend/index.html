@@ -115,30 +115,26 @@
   <div id="step10" class="step step-slowmo">
     <div class="slowmo-top">
       <button class="slowmo-back" onclick="goStep(9)">← 스코어</button>
-      <span class="slowmo-title">교정 영상</span>
+      <span class="slowmo-title">스윙 분석</span>
     </div>
 
-    <div class="slowmo-video-wrap">
+    <div class="slowmo-video-wrap" id="slowmoTapArea">
       <video id="slowmoVideo" playsinline muted></video>
       <canvas id="slowmoCanvas"></canvas>
+      <div class="phase-badge" id="phaseBadge"></div>
+      <div class="phase-indicator" id="phaseIndicator"></div>
+      <div class="tap-hint" id="tapHint">탭하여 다음 구간 ▶</div>
     </div>
 
     <div class="slowmo-controls">
-      <button class="slowmo-play-btn" id="slowmoPlayBtn" onclick="toggleSlowmo()">▶</button>
       <div class="slowmo-timeline" id="slowmoTimeline">
         <div class="timeline-bg"></div>
         <div class="timeline-progress" id="timelineProgress"></div>
-        <div class="timeline-handle" id="timelineHandle"></div>
+        <div class="phase-dots" id="phaseDots"></div>
       </div>
-      <span class="slowmo-time" id="slowmoTime">0:00</span>
-      <span class="slowmo-speed">0.25x</span>
     </div>
     <div class="slowmo-annotation" id="slowmoAnnotation"></div>
-    <div class="slowmo-info">
-      <div class="slowmo-phase" id="slowmoPhaseLabel">—</div>
-      <div class="slowmo-comment-text" id="slowmoComment"></div>
-    </div>
-    <button class="btn btn-secondary" onclick="resetAll()" style="margin:0 24px 24px">처음부터 다시하기</button>
+    <button class="btn btn-secondary" onclick="resetAll()" style="margin:12px 24px 24px">처음부터 다시하기</button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>

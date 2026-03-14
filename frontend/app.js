@@ -777,9 +777,9 @@ function getPhaseRanges() {
   return (detectedPhases && detectedPhases.ranges) ? detectedPhases.ranges : DEFAULT_PHASE_RANGES;
 }
 
-var slowmoPausePoints = [];
-var slowmoPauseIdx = 0;
+var slowmoPhaseIdx = 0;
 var slowmoPaused = false;
+var slowmoTapBound = false;
 
 function showSlowmoPlayer() {
   goStep(10);
@@ -791,9 +791,10 @@ function showSlowmoPlayer() {
   video.playbackRate = 0.25;
   video.muted = true;
 
-  slowmoPausePoints = buildPausePoints();
-  slowmoPauseIdx = 0;
+  slowmoPhaseIdx = 0;
   slowmoPaused = false;
+
+  buildPhaseDots();
 
   video.onloadedmetadata = function () {
     canvas.width = video.videoWidth || 640;
@@ -802,68 +803,82 @@ function showSlowmoPlayer() {
     startSlowmoOverlay();
   };
   video.onplay = function () {
-    var btn = document.getElementById('slowmoPlayBtn');
-    if (btn) btn.textContent = '⏸';
-    clearAnnotation();
+    setTapHint(false);
     startSlowmoOverlay();
   };
-  video.onpause = function () {
-    var btn = document.getElementById('slowmoPlayBtn');
-    if (btn) btn.textContent = '▶';
-  };
   video.onended = function () {
-    var btn = document.getElementById('slowmoPlayBtn');
-    if (btn) btn.textContent = '↻';
     if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
+    showAnnotation('✅ 분석 완료', 'ok');
+    setTapHint(false);
+    var badge = document.getElementById('phaseBadge');
+    if (badge) badge.textContent = '';
   };
 
-  initTimelineSeek();
-}
-
-var _seekVideo = null;
-var _seekBound = false;
-
-function initTimelineSeek() {
-  _seekVideo = document.getElementById('slowmoVideo');
-  var timeline = document.getElementById('slowmoTimeline');
-  if (!timeline) return;
-
-  function seekTo(e) {
-    var vid = _seekVideo;
-    if (!vid || !vid.duration) return;
-    var rect = timeline.getBoundingClientRect();
-    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    vid.currentTime = pct * vid.duration;
-
-    slowmoPauseIdx = 0;
-    slowmoPaused = false;
-    for (var i = 0; i < slowmoPausePoints.length; i++) {
-      if (slowmoPausePoints[i].time <= vid.currentTime) slowmoPauseIdx = i + 1;
-    }
-
-    clearAnnotation();
-    updateTimelineUI(vid);
-
-    var canvas = document.getElementById('slowmoCanvas');
-    if (canvas) {
-      var ctx = canvas.getContext('2d');
-      var phase = getCurrentPhase(vid.currentTime);
-      var poseFrame = findClosestPoseFrame(vid.currentTime);
-      drawOverlayFrame(ctx, canvas, vid, poseFrame, phase, {});
+  if (!slowmoTapBound) {
+    slowmoTapBound = true;
+    var tapArea = document.getElementById('slowmoTapArea');
+    if (tapArea) {
+      tapArea.addEventListener('click', handleSlowmoTap);
+      tapArea.addEventListener('touchend', function (e) {
+        e.preventDefault();
+        handleSlowmoTap();
+      });
     }
   }
+}
 
-  if (_seekBound) return;
-  _seekBound = true;
+function handleSlowmoTap() {
+  var video = document.getElementById('slowmoVideo');
+  if (!video) return;
 
-  var dragging = false;
-  timeline.addEventListener('mousedown', function (e) { dragging = true; if (_seekVideo) _seekVideo.pause(); seekTo(e); });
-  timeline.addEventListener('touchstart', function (e) { dragging = true; if (_seekVideo) _seekVideo.pause(); seekTo(e); }, { passive: true });
-  document.addEventListener('mousemove', function (e) { if (dragging) seekTo(e); });
-  document.addEventListener('touchmove', function (e) { if (dragging) seekTo(e); }, { passive: true });
-  document.addEventListener('mouseup', function () { if (dragging) dragging = false; });
-  document.addEventListener('touchend', function () { if (dragging) dragging = false; });
+  if (video.ended) {
+    video.currentTime = 0;
+    slowmoPhaseIdx = 0;
+    slowmoPaused = false;
+    clearAnnotation();
+    video.play();
+    return;
+  }
+
+  if (slowmoPaused) {
+    slowmoPaused = false;
+    slowmoPhaseIdx++;
+    clearAnnotation();
+    video.play();
+  } else if (!video.paused) {
+    video.pause();
+    setTapHint(false);
+  } else {
+    video.play();
+  }
+}
+
+function buildPhaseDots() {
+  var dotsEl = document.getElementById('phaseDots');
+  if (!dotsEl) return;
+  dotsEl.innerHTML = '';
+  var ranges = getPhaseRanges();
+  for (var i = 0; i < ranges.length; i++) {
+    var dot = document.createElement('div');
+    dot.className = 'phase-dot';
+    var mid = (ranges[i].start + ranges[i].end) / 2;
+    dot.style.left = (mid / 4.0 * 100) + '%';
+    dot.setAttribute('data-idx', i);
+    dotsEl.appendChild(dot);
+  }
+}
+
+function updatePhaseDots(currentIdx) {
+  var dots = document.querySelectorAll('.phase-dot');
+  for (var i = 0; i < dots.length; i++) {
+    var idx = parseInt(dots[i].getAttribute('data-idx'));
+    dots[i].className = 'phase-dot' + (idx === currentIdx ? ' active' : idx < currentIdx ? ' done' : '');
+  }
+}
+
+function setTapHint(show) {
+  var el = document.getElementById('tapHint');
+  if (el) el.className = show ? 'tap-hint visible' : 'tap-hint';
 }
 
 function updateTimelineUI(video) {
@@ -871,42 +886,18 @@ function updateTimelineUI(video) {
   var pct = (video.currentTime / video.duration * 100);
   var progress = document.getElementById('timelineProgress');
   if (progress) progress.style.width = pct + '%';
-  var handle = document.getElementById('timelineHandle');
-  if (handle) handle.style.left = pct + '%';
-  var timeEl = document.getElementById('slowmoTime');
-  if (timeEl) {
-    var s = Math.floor(video.currentTime);
-    var ms = Math.floor((video.currentTime - s) * 10);
-    timeEl.textContent = s + '.' + ms + 's';
-  }
-}
-
-function toggleSlowmo() {
-  var video = document.getElementById('slowmoVideo');
-  if (!video) return;
-  if (video.paused || video.ended) {
-    if (video.ended) {
-      video.currentTime = 0;
-      slowmoPauseIdx = 0;
-      slowmoPaused = false;
-    }
-    if (slowmoPaused) {
-      slowmoPaused = false;
-      slowmoPauseIdx++;
-    }
-    clearAnnotation();
-    video.play();
-  } else {
-    video.pause();
-  }
 }
 
 function getCurrentPhase(time) {
   var ranges = getPhaseRanges();
   for (var i = 0; i < ranges.length; i++) {
-    if (time >= ranges[i].start && time < ranges[i].end) return ranges[i];
+    if (time >= ranges[i].start && time < ranges[i].end) return { idx: i, data: ranges[i] };
   }
-  return ranges[ranges.length - 1];
+  return { idx: ranges.length - 1, data: ranges[ranges.length - 1] };
+}
+
+function getCurrentPhaseData(time) {
+  return getCurrentPhase(time).data;
 }
 
 function findClosestPoseFrame(time) {
@@ -919,52 +910,32 @@ function findClosestPoseFrame(time) {
   return (closest && minDist < 0.3) ? closest : null;
 }
 
-function buildPausePoints() {
-  var points = [];
-  if (!state.analysisResult || !state.analysisResult.corrections) return points;
-  var corr = state.analysisResult.corrections;
-  var ranges = getPhaseRanges();
+function getPhaseCorrections(phaseKey) {
+  if (!state.analysisResult || !state.analysisResult.corrections) return null;
+  var pc = state.analysisResult.corrections[phaseKey];
+  if (!pc || pc.length === 0) return null;
 
-  for (var i = 0; i < ranges.length; i++) {
-    var pr = ranges[i];
-    var pc = corr[pr.key];
-    if (!pc || pc.length === 0) continue;
-
-    var joints = {};
-    var labels = [];
-    for (var j = 0; j < pc.length; j++) {
-      var c = pc[j];
-      joints[c.joint_idx] = true;
-      if (c.vertex_idx !== undefined) joints[c.vertex_idx] = true;
-      if (c.anchor_idx !== undefined) joints[c.anchor_idx] = true;
-      if (c.endpoint_idx !== undefined) joints[c.endpoint_idx] = true;
-      if (c.label) labels.push(c.label);
-    }
-
-    points.push({
-      time: (pr.start + pr.end) / 2,
-      phaseKey: pr.key,
-      phaseLabel: pr.label,
-      joints: joints,
-      labels: labels
-    });
+  var joints = {};
+  var labels = [];
+  for (var j = 0; j < pc.length; j++) {
+    var c = pc[j];
+    joints[c.joint_idx] = true;
+    if (c.vertex_idx !== undefined) joints[c.vertex_idx] = true;
+    if (c.anchor_idx !== undefined) joints[c.anchor_idx] = true;
+    if (c.endpoint_idx !== undefined) joints[c.endpoint_idx] = true;
+    if (c.label) labels.push(c.label);
   }
-
-  points.sort(function (a, b) { return a.time - b.time; });
-  return points;
+  return { joints: joints, labels: labels };
 }
 
-function showAnnotation(text) {
+function showAnnotation(text, type) {
   var el = document.getElementById('slowmoAnnotation');
   if (!el) return;
-  var lines = text.split('\n');
-  var html = '<div class="annotation-text">';
-  html += '<strong>' + escapeHtml(lines[0]) + '</strong>';
-  for (var i = 1; i < lines.length; i++) {
-    html += '<br>' + escapeHtml(lines[i]);
+  if (type === 'ok') {
+    el.innerHTML = '<div class="annotation-ok">' + escapeHtml(text) + '</div>';
+  } else {
+    el.innerHTML = '<div class="annotation-text">' + escapeHtml(text) + '</div>';
   }
-  html += '</div>';
-  el.innerHTML = html;
 }
 function clearAnnotation() {
   var el = document.getElementById('slowmoAnnotation');
@@ -976,37 +947,47 @@ function startSlowmoOverlay() {
   var canvas = document.getElementById('slowmoCanvas');
   if (!video || !canvas) return;
   var ctx = canvas.getContext('2d');
+  var ranges = getPhaseRanges();
 
   function drawFrame() {
     if (video.paused || video.ended) { slowmoAnimId = null; return; }
 
     var t = video.currentTime;
-    var phase = getCurrentPhase(t);
+    var phaseInfo = getCurrentPhase(t);
+    var phaseData = phaseInfo.data;
     var poseFrame = findClosestPoseFrame(t);
 
-    /* auto-pause check */
-    if (slowmoPauseIdx < slowmoPausePoints.length && !slowmoPaused) {
-      var pp = slowmoPausePoints[slowmoPauseIdx];
-      if (t >= pp.time) {
+    updateTimelineUI(video);
+    updatePhaseDots(phaseInfo.idx);
+
+    var badge = document.getElementById('phaseBadge');
+    if (badge) badge.textContent = phaseData.label;
+    var indicator = document.getElementById('phaseIndicator');
+    if (indicator) indicator.textContent = (phaseInfo.idx + 1) + ' / 7';
+
+    if (slowmoPhaseIdx < ranges.length && !slowmoPaused) {
+      var targetPhase = ranges[slowmoPhaseIdx];
+      var pauseTime = (targetPhase.start + targetPhase.end) / 2;
+      if (t >= pauseTime) {
         slowmoPaused = true;
         video.pause();
 
-        showAnnotation(pp.phaseLabel + '\n' + pp.labels.join('\n'));
-        drawOverlayFrame(ctx, canvas, video, poseFrame, phase, pp.joints);
+        var corr = getPhaseCorrections(targetPhase.key);
+        if (corr && corr.labels.length > 0) {
+          showAnnotation(corr.labels[0]);
+          drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, corr.joints);
+        } else {
+          showAnnotation('👍 ' + targetPhase.label + ' — 문제 없음', 'ok');
+          drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, {});
+        }
 
-        setTimeout(function () {
-          if (!slowmoPaused) return;
-          slowmoPaused = false;
-          slowmoPauseIdx++;
-          clearAnnotation();
-          video.play();
-        }, 3000);
+        setTapHint(true);
         slowmoAnimId = null;
         return;
       }
     }
 
-    drawOverlayFrame(ctx, canvas, video, poseFrame, phase, {});
+    drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, {});
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
@@ -1018,17 +999,6 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
   var w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  /* UI 업데이트 */
-  var phaseLabel = document.getElementById('slowmoPhaseLabel');
-  if (phaseLabel) phaseLabel.textContent = phase.label;
-
-  var comment = '';
-  if (state.analysisResult && state.analysisResult.phase_comments) {
-    comment = state.analysisResult.phase_comments[phase.key] || '';
-  }
-  var commentEl = document.getElementById('slowmoComment');
-  if (commentEl) commentEl.textContent = comment;
-
   updateTimelineUI(video);
 
   if (!poseFrame || !poseFrame.landmarks) return;
@@ -1037,7 +1007,6 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
   var hasHL = false;
   for (var k in highlightJoints) { hasHL = true; break; }
 
-  /* 스켈레톤 선 */
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
     var conn = POSE_CONNECTIONS[ci];
     var a = lms[conn[0]], b = lms[conn[1]];
@@ -1048,22 +1017,20 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
     ctx.moveTo(a.x * w, a.y * h);
     ctx.lineTo(b.x * w, b.y * h);
     ctx.lineWidth = connHL ? Math.max(4, w * 0.008) : Math.max(2, w * 0.005);
-    ctx.strokeStyle = connHL ? 'rgba(255,68,68,0.85)' : 'rgba(255,255,255,0.45)';
+    ctx.strokeStyle = connHL ? 'rgba(255,68,68,0.85)' : 'rgba(255,255,255,0.35)';
     ctx.stroke();
   }
 
-  /* 관절 점 */
   for (var li = 0; li < lms.length; li++) {
     var lm = lms[li];
     if (!lm || lm.visibility < 0.25) continue;
     var isHL = hasHL && (li in highlightJoints);
     ctx.beginPath();
     ctx.arc(lm.x * w, lm.y * h, isHL ? DOT_R * 1.6 : DOT_R, 0, Math.PI * 2);
-    ctx.fillStyle = isHL ? '#FF4444' : 'rgba(255,255,255,0.6)';
+    ctx.fillStyle = isHL ? '#FF4444' : 'rgba(255,255,255,0.5)';
     ctx.fill();
   }
 
-  /* 문제 관절 빨간 원 강조 (큰 링) */
   if (hasHL) {
     for (var ji in highlightJoints) {
       var idx = parseInt(ji);
@@ -1100,7 +1067,7 @@ function resetAll() {
   poseRunning = false; okFrames = 0;
   setupDone = false; betweenState = 'idle'; noPersonFrames = 0;
   if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
-  slowmoPaused = false; slowmoPauseIdx = 0; slowmoPausePoints = [];
+  slowmoPaused = false; slowmoPhaseIdx = 0;
   var slowVid = document.getElementById('slowmoVideo');
   if (slowVid) { slowVid.pause(); slowVid.removeAttribute('src'); slowVid.load(); }
   if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }
