@@ -3,6 +3,8 @@ uvicorn[standard]>=0.27
 python-multipart>=0.0.9
 pydantic>=2.6
 python-dotenv>=1.0
+requests>=2.31
 
 # Gemini / Vertex AI
 google-cloud-aiplatform>=1.60
+google-auth>=2.28

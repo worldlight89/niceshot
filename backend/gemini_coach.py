@@ -84,7 +84,41 @@ def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
 }}""".strip()
 
 
+# ─── Gemini API Key 방식 (Vertex AI 실패 시 폴백) ────────────────────
+def _call_gemini_apikey(content_parts_data: list, prompt: str) -> str | None:
+    """GEMINI_API_KEY 환경변수로 Gemini 호출"""
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        parts = []
+        for item in content_parts_data:
+            if item["type"] == "image":
+                parts.append({"mime_type": "image/jpeg", "data": item["bytes"]})
+            else:
+                parts.append(item["text"])
+        parts.append(prompt)
+        resp = model.generate_content(parts)
+        return (resp.text or "").strip()
+    except Exception as e:
+        print(f"[Gemini API Key] Error: {type(e).__name__}: {e}")
+        return None
+
+
 # ─── 메인 함수 ───────────────────────────────────────────────────────
+FRAME_KEYS = [
+    ("address",       "어드레스"),
+    ("takeaway",      "테이크어웨이"),
+    ("top",           "백스윙 탑"),
+    ("transition",    "트랜지션"),
+    ("impact",        "임팩트"),
+    ("followthrough", "팔로스루"),
+    ("finish",        "피니시"),
+]
+
 def coach_with_gemini(
     *,
     clip_idx: int,
@@ -92,34 +126,10 @@ def coach_with_gemini(
     notes: str = "",
     club: str = "",
 ) -> CoachingResult:
-    if not _ensure_vertexai():
-        ph = _placeholder(clip_idx)
-        ph.coaching = f'{{"address":{{"corrections":[],"comment":"Vertex AI 연결 실패: {_init_error}"}},"takeaway":{{"corrections":[],"comment":""}},"top":{{"corrections":[],"comment":""}},"transition":{{"corrections":[],"comment":""}},"impact":{{"corrections":[],"comment":""}},"followthrough":{{"corrections":[],"comment":""}},"finish":{{"corrections":[],"comment":""}},"today_focus":"{_init_error}","drill":{{"name":"","method":"","reps":""}}}}'
-        return ph
-
-    try:
-        from vertexai.generative_models import GenerativeModel, Part, Image
-    except ImportError as e:
-        ph = _placeholder(clip_idx)
-        ph.summary = f"import 실패: {e}"
-        return ph
-
-    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
-
-    # ── 멀티모달 파트 구성 ──
-    content_parts = []
-    frame_keys = [
-        ("address",       "어드레스"),
-        ("takeaway",      "테이크어웨이"),
-        ("top",           "백스윙 탑"),
-        ("transition",    "트랜지션"),
-        ("impact",        "임팩트"),
-        ("followthrough", "팔로스루"),
-        ("finish",        "피니시"),
-    ]
     metrics_by_phase: dict[str, dict] = {}
+    image_data: list[dict] = []
 
-    for key, label in frame_keys:
+    for key, label in FRAME_KEYS:
         frame_data = frames.get(key, {})
         b64 = frame_data.get("base64", "") if isinstance(frame_data, dict) else ""
         metrics_by_phase[key] = frame_data.get("metrics", {}) if isinstance(frame_data, dict) else {}
@@ -128,47 +138,47 @@ def coach_with_gemini(
             raw = b64.split(",")[-1] if "," in b64 else b64
             try:
                 image_bytes = base64.b64decode(raw)
-                content_parts.append(Part.from_image(Image.from_bytes(image_bytes)))
-                content_parts.append(Part.from_text(f"[{label} 프레임]"))
+                image_data.append({"type": "image", "bytes": image_bytes, "label": label})
             except Exception:
                 pass
 
     prompt = _build_prompt(clip_idx, club, notes, metrics_by_phase)
-    content_parts.append(Part.from_text(prompt))
+    text = None
 
-    if not content_parts:
+    # 방법 1: Vertex AI SDK
+    if _ensure_vertexai():
+        try:
+            from vertexai.generative_models import GenerativeModel, Part, Image
+            model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
+            content_parts = []
+            for item in image_data:
+                content_parts.append(Part.from_image(Image.from_bytes(item["bytes"])))
+                content_parts.append(Part.from_text(f"[{item['label']} 프레임]"))
+            content_parts.append(Part.from_text(prompt))
+            model = GenerativeModel(model_name)
+            resp = model.generate_content(content_parts)
+            text = (resp.text or "").strip()
+            print(f"[Vertex AI] Success for swing {clip_idx}")
+        except Exception as e:
+            print(f"[Vertex AI] Call failed: {type(e).__name__}: {e}")
+            text = None
+
+    # 방법 2: Gemini API Key 폴백
+    if not text:
+        print(f"[Gemini] Trying API Key fallback...")
+        text = _call_gemini_apikey(image_data, prompt)
+
+    if not text:
         return _placeholder(clip_idx)
 
+    text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"```\s*", "", text)
+    text = text.strip()
+
     try:
-        model = GenerativeModel(model_name)
-        resp = model.generate_content(content_parts)
-        text = (resp.text or "").strip()
-        if not text:
-            return _placeholder(clip_idx)
+        parsed = json.loads(text)
+        summary = parsed.get("today_focus", f"스윙 {clip_idx} 분석 완료")
+    except Exception:
+        summary = f"스윙 {clip_idx} 분석 완료"
 
-        text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"```\s*", "", text)
-        text = text.strip()
-
-        try:
-            parsed = json.loads(text)
-            summary = parsed.get("today_focus", f"스윙 {clip_idx} 분석 완료")
-        except Exception:
-            summary = f"스윙 {clip_idx} 분석 완료"
-
-        return CoachingResult(coaching=text, summary=summary)
-
-    except Exception as e:
-        err_type = type(e).__name__
-        ph = _placeholder(clip_idx)
-        ph.coaching = (
-            f'{{"address":{{"corrections":[],"comment":"Gemini 호출 오류: {err_type}: {str(e)[:200]}"}}'
-            f',"takeaway":{{"corrections":[],"comment":""}}'
-            f',"top":{{"corrections":[],"comment":""}}'
-            f',"transition":{{"corrections":[],"comment":""}}'
-            f',"impact":{{"corrections":[],"comment":""}}'
-            f',"followthrough":{{"corrections":[],"comment":""}}'
-            f',"finish":{{"corrections":[],"comment":""}}'
-            f',"today_focus":"오류 발생","drill":{{"name":"","method":"","reps":""}}}}'
-        )
-        return ph
+    return CoachingResult(coaching=text, summary=summary)

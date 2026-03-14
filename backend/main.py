@@ -49,29 +49,76 @@ def health() -> dict[str, str]:
 
 @app.get("/test-gemini")
 def test_gemini() -> dict[str, Any]:
-    """Gemini 연결 테스트"""
+    """Gemini 연결 테스트 - REST API 직접 호출"""
+    import requests as req
+
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
+    location = os.environ.get("VERTEX_LOCATION", "us-central1").strip()
+    model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip()
+
     info: dict[str, Any] = {
-        "VERTEX_PROJECT_ID": os.environ.get("VERTEX_PROJECT_ID", ""),
-        "VERTEX_LOCATION": os.environ.get("VERTEX_LOCATION", ""),
-        "VERTEX_MODEL": os.environ.get("VERTEX_MODEL", ""),
-        "GOOGLE_APPLICATION_CREDENTIALS": os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
-        "creds_file_exists": os.path.exists(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")),
+        "project": project,
+        "location": location,
+        "model": model_name,
+        "creds_path": creds_path,
+        "creds_exists": os.path.exists(creds_path),
     }
+
+    # 1) 서비스 계정 정보 읽기
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
-        project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
-        location = os.environ.get("VERTEX_LOCATION", "us-central1").strip() or "us-central1"
-        model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
-        vertexai.init(project=project, location=location)
-        model = GenerativeModel(model_name)
-        resp = model.generate_content("안녕. 한 문장으로 대답해.")
-        info["response"] = resp.text
-        info["status"] = "SUCCESS"
+        with open(creds_path, "r") as f:
+            sa_data = json.load(f)
+        info["sa_email"] = sa_data.get("client_email", "???")
+        info["sa_project"] = sa_data.get("project_id", "???")
+    except Exception as e:
+        info["sa_read_error"] = str(e)
+        return info
+
+    # 2) 액세스 토큰 발급
+    try:
+        import google.auth
+        import google.auth.transport.requests as gauth_req
+        creds, auto_project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        creds.refresh(gauth_req.Request())
+        info["token_ok"] = True
+        info["token_project"] = auto_project
+    except Exception as e:
+        info["token_ok"] = False
+        info["token_error"] = f"{type(e).__name__}: {e}"
+        return info
+
+    # 3) REST API 직접 호출
+    url = (
+        f"https://{location}-aiplatform.googleapis.com/v1/"
+        f"projects/{project}/locations/{location}/"
+        f"publishers/google/models/{model_name}:generateContent"
+    )
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": "안녕. 한 문장으로 답해."}]}]
+    }
+
+    try:
+        r = req.post(url, headers=headers, json=body, timeout=30)
+        info["http_status"] = r.status_code
+        if r.status_code == 200:
+            resp_json = r.json()
+            text = resp_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            info["response"] = text
+            info["status"] = "SUCCESS"
+        else:
+            info["status"] = "FAILED"
+            info["error_body"] = r.text[:500]
     except Exception as e:
         info["status"] = "FAILED"
-        info["error_type"] = type(e).__name__
-        info["error"] = str(e)
+        info["request_error"] = f"{type(e).__name__}: {e}"
+
     return info
 
 
