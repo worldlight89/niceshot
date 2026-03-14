@@ -43,6 +43,8 @@ PRO_ANGLES: dict[str, dict[str, dict]] = {
     "followthrough": {
         "왼팔각도_deg":        {"ideal": 170, "good": (150, 180), "warn": (130, 150)},
         "척추기울기_deg":      {"ideal": 35,  "good": (20, 50),   "warn": (10, 60)},
+        "오른무릎굴곡_deg":    {"ideal": 140, "good": (120, 158), "warn": (100, 170)},
+        "오른팔각도_deg":      {"ideal": 165, "good": (150, 180), "warn": (135, 180)},
     },
 }
 
@@ -347,6 +349,89 @@ DEDUCTION_RULES: list[dict] = [
         "joint": "left_elbow",
         "joint_idx": 13,
     },
+
+    # ===================================================================
+    # Extended rules – batch 2 (5 additional)
+    # ===================================================================
+
+    # --- cross_phase: head bob during backswing ---
+    {
+        "id": "head_movement_top",
+        "type": "cross_phase",
+        "metric": "머리높이_pct",
+        "phase_a": "address",
+        "phase_b": "top",
+        "tiers": [
+            {"min_diff": 7, "deduction": 8, "severity": "fault"},
+            {"min_diff": 4, "deduction": 3, "severity": "warning"},
+        ],
+        "label_ko": "백스윙 중 머리 움직임",
+        "friendly_ko": "백스윙하면서 머리가 위아래로 움직였어요. 시선을 공에 고정하고 머리 높이를 유지하세요.",
+        "report_phase": "top",
+        "joint": "nose",
+        "joint_idx": 0,
+    },
+    # --- above_threshold: weight hanging back at followthrough ---
+    {
+        "id": "weight_hang_back",
+        "type": "above_threshold",
+        "metric": "오른무릎굴곡_deg",
+        "phase": "followthrough",
+        "tiers": [
+            {"above": 165, "deduction": 10, "severity": "fault"},
+            {"above": 155, "deduction": 4,  "severity": "warning"},
+        ],
+        "label_ko": "체중 이동 부족 (뒷발 잔류)",
+        "friendly_ko": "피니시에서 체중이 뒷발에 남아 있어요. 스윙 후 오른발 뒤꿈치가 들릴 정도로 체중을 앞으로 옮기세요.",
+        "joint": "right_knee",
+        "joint_idx": 26,
+    },
+    # --- below_threshold: right arm not extending at followthrough ---
+    {
+        "id": "right_arm_followthrough",
+        "type": "below_threshold",
+        "metric": "오른팔각도_deg",
+        "phase": "followthrough",
+        "tiers": [
+            {"below": 135, "deduction": 7, "severity": "fault"},
+            {"below": 150, "deduction": 3, "severity": "warning"},
+        ],
+        "label_ko": "팔로스루 오른팔 미신전",
+        "friendly_ko": "팔로스루에서 오른팔이 충분히 펴지지 않았어요. 공을 친 후 양팔을 타겟 방향으로 쭉 뻗어보세요.",
+        "joint": "right_elbow",
+        "joint_idx": 14,
+    },
+    # --- min_cross_phase: left knee didn't flex at top ---
+    {
+        "id": "left_knee_stiff_top",
+        "type": "min_cross_phase",
+        "metric": "왼무릎굴곡_deg",
+        "phase_a": "address",
+        "phase_b": "top",
+        "tiers": [
+            {"max_diff": 2,  "deduction": 7, "severity": "fault"},
+            {"max_diff": 5,  "deduction": 3, "severity": "warning"},
+        ],
+        "label_ko": "백스윙 왼무릎 경직",
+        "friendly_ko": "백스윙할 때 왼쪽 무릎이 거의 안 움직였어요. 왼무릎이 공 쪽으로 살짝 들어오도록 허용하면 회전이 더 쉬워져요.",
+        "report_phase": "top",
+        "joint": "left_knee",
+        "joint_idx": 25,
+    },
+    # --- out_of_range: address shoulder tilt ---
+    {
+        "id": "address_shoulder_tilt",
+        "type": "out_of_range",
+        "metric": "어깨기울기_deg",
+        "phase": "address",
+        "range": (-12, 12),
+        "deduction": 4,
+        "severity": "warning",
+        "label_ko": "어드레스 어깨 기울어짐",
+        "friendly_ko": "준비 자세에서 어깨가 한쪽으로 기울어져 있어요. 양쪽 어깨를 수평에 가깝게 맞춰주세요.",
+        "joint": "left_shoulder",
+        "joint_idx": 11,
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -461,5 +546,35 @@ DRILL_MAP: dict[str, dict[str, str]] = {
         "method": "왼손만으로 클럽을 잡고 천천히 스윙합니다. "
                   "임팩트 순간 왼팔이 쭉 펴진 상태를 유지하는 감각을 익히세요.",
         "reps": "한손 스윙 10회 3세트",
+    },
+    "head_movement_top": {
+        "name": "백스윙 머리 고정 드릴",
+        "method": "친구에게 머리 위에 손을 올려달라고 하거나, "
+                  "모자 챙이 움직이지 않는지 거울로 확인하며 백스윙합니다.",
+        "reps": "슬로우 스윙 15회",
+    },
+    "weight_hang_back": {
+        "name": "체중 이동 스텝 드릴",
+        "method": "스윙 후 오른발을 왼발 옆으로 한 발짝 딛는 연습을 합니다. "
+                  "피니시에서 오른발 뒤꿈치가 완전히 들려야 정상입니다.",
+        "reps": "10회 3세트",
+    },
+    "right_arm_followthrough": {
+        "name": "오른팔 릴리스 스윙 드릴",
+        "method": "오른손만으로 9시→3시 스윙을 하며 "
+                  "팔로스루에서 팔이 자연스럽게 뻗어지는 느낌을 익힙니다.",
+        "reps": "한손 하프 스윙 15회",
+    },
+    "left_knee_stiff_top": {
+        "name": "왼무릎 유연 회전 드릴",
+        "method": "어드레스에서 백스윙 시 왼무릎이 공 방향으로 "
+                  "살짝 움직이도록 허용합니다. 하체가 너무 경직되면 상체 회전도 제한돼요.",
+        "reps": "슬로우 백스윙 15회",
+    },
+    "address_shoulder_tilt": {
+        "name": "어깨 수평 셋업 드릴",
+        "method": "거울 앞에서 클럽을 양쪽 어깨에 걸치고 "
+                  "수평인지 확인합니다. 오른손이 아래에 있으므로 약간의 기울기는 허용되지만 과하면 안 됩니다.",
+        "reps": "매 연습 시작 전 확인",
     },
 }
