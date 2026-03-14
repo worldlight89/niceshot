@@ -100,31 +100,25 @@ def test_gemini() -> dict[str, Any]:
     }
 
     tests = [
-        ("v1", location, "gemini-2.0-flash-001"),
-        ("v1beta1", location, "gemini-2.0-flash-001"),
-        ("v1", location, "gemini-2.0-flash"),
-        ("v1", location, "gemini-1.5-flash-002"),
-        ("v1", location, "gemini-1.5-flash-001"),
+        ("vertex-v1", f"https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/gemini-2.0-flash-001:generateContent"),
+        ("vertex-v1beta1", f"https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/publishers/google/models/gemini-2.0-flash-001:generateContent"),
+        ("genai-v1beta", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"),
+        ("genai-v1beta-sa", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"),
     ]
 
     results_list = []
-    for api_ver, loc, mdl in tests:
-        url = (
-            f"https://{loc}-aiplatform.googleapis.com/{api_ver}/"
-            f"projects/{project}/locations/{loc}/"
-            f"publishers/google/models/{mdl}:generateContent"
-        )
+    for label, url in tests:
         try:
             r = req.post(url, headers=headers, json=body, timeout=15)
-            entry = {"api": api_ver, "model": mdl, "http": r.status_code}
+            entry = {"test": label, "http": r.status_code}
             if r.status_code == 200:
                 rj = r.json()
-                entry["text"] = rj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")[:80]
+                entry["text"] = rj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")[:100]
             else:
-                entry["err"] = r.text[:200]
+                entry["err"] = r.text[:300]
             results_list.append(entry)
         except Exception as e:
-            results_list.append({"api": api_ver, "model": mdl, "err": str(e)[:150]})
+            results_list.append({"test": label, "err": str(e)[:200]})
 
     info["tests"] = results_list
     info["status"] = "SUCCESS" if any(t.get("http") == 200 for t in results_list) else "ALL_FAILED"
