@@ -90,35 +90,44 @@ def test_gemini() -> dict[str, Any]:
         info["token_error"] = f"{type(e).__name__}: {e}"
         return info
 
-    # 3) REST API 직접 호출
-    url = (
-        f"https://{location}-aiplatform.googleapis.com/v1/"
-        f"projects/{project}/locations/{location}/"
-        f"publishers/google/models/{model_name}:generateContent"
-    )
+    # 3) 여러 모델/엔드포인트 조합 테스트
     headers = {
         "Authorization": f"Bearer {creds.token}",
         "Content-Type": "application/json",
     }
     body = {
-        "contents": [{"role": "user", "parts": [{"text": "안녕. 한 문장으로 답해."}]}]
+        "contents": [{"role": "user", "parts": [{"text": "say hi"}]}]
     }
 
-    try:
-        r = req.post(url, headers=headers, json=body, timeout=30)
-        info["http_status"] = r.status_code
-        if r.status_code == 200:
-            resp_json = r.json()
-            text = resp_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            info["response"] = text
-            info["status"] = "SUCCESS"
-        else:
-            info["status"] = "FAILED"
-            info["error_body"] = r.text[:500]
-    except Exception as e:
-        info["status"] = "FAILED"
-        info["request_error"] = f"{type(e).__name__}: {e}"
+    tests = [
+        ("v1", location, "gemini-2.0-flash-001"),
+        ("v1beta1", location, "gemini-2.0-flash-001"),
+        ("v1", location, "gemini-2.0-flash"),
+        ("v1", location, "gemini-1.5-flash-002"),
+        ("v1", location, "gemini-1.5-flash-001"),
+    ]
 
+    results_list = []
+    for api_ver, loc, mdl in tests:
+        url = (
+            f"https://{loc}-aiplatform.googleapis.com/{api_ver}/"
+            f"projects/{project}/locations/{loc}/"
+            f"publishers/google/models/{mdl}:generateContent"
+        )
+        try:
+            r = req.post(url, headers=headers, json=body, timeout=15)
+            entry = {"api": api_ver, "model": mdl, "http": r.status_code}
+            if r.status_code == 200:
+                rj = r.json()
+                entry["text"] = rj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")[:80]
+            else:
+                entry["err"] = r.text[:200]
+            results_list.append(entry)
+        except Exception as e:
+            results_list.append({"api": api_ver, "model": mdl, "err": str(e)[:150]})
+
+    info["tests"] = results_list
+    info["status"] = "SUCCESS" if any(t.get("http") == 200 for t in results_list) else "ALL_FAILED"
     return info
 
 
