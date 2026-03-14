@@ -937,11 +937,13 @@ function buildPhaseStops() {
     var grade = phaseGrades[phaseKey] || 'good';
     var phaseProbs = phaseProblemMap[phaseKey] || [];
 
+    var mainProb = phaseProbs.length > 0 ? phaseProbs[0] : null;
+
     var joints = {};
-    var pc = corrections[phaseKey];
-    if (pc) {
-      for (var j = 0; j < pc.length; j++) {
-        var c = pc[j];
+    if (mainProb) {
+      var pc = corrections[phaseKey];
+      if (pc && pc.length > 0) {
+        var c = pc[0];
         joints[c.joint_idx] = true;
         if (c.vertex_idx !== undefined) joints[c.vertex_idx] = true;
         if (c.anchor_idx !== undefined) joints[c.anchor_idx] = true;
@@ -949,14 +951,7 @@ function buildPhaseStops() {
       }
     }
 
-    var desc = '';
-    if (phaseProbs.length > 0) {
-      var descs = [];
-      for (var pi = 0; pi < phaseProbs.length; pi++) {
-        descs.push(phaseProbs[pi].description || phaseProbs[pi].detail || '');
-      }
-      desc = descs.join(' / ');
-    }
+    var desc = mainProb ? (mainProb.description || mainProb.detail || '') : '';
 
     stops.push({
       idx: r + 1,
@@ -966,7 +961,7 @@ function buildPhaseStops() {
       grade: grade,
       description: desc,
       joints: joints,
-      hasProblems: phaseProbs.length > 0
+      hasProblems: mainProb !== null
     });
   }
 
@@ -1305,6 +1300,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints,
       ctx.fillText(goodText, bx + padding, descY + padding * 0.4);
     } else {
       var descLines = wrapText(ctx, stopInfo.description, maxTextW);
+      if (descLines.length > 3) descLines = descLines.slice(0, 3);
       var boxW = 0;
       for (var i = 0; i < descLines.length; i++) {
         var lw = ctx.measureText(descLines[i]).width;
