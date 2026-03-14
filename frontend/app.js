@@ -195,10 +195,10 @@ function onPoseResult(results) {
     if (okFrames >= 8) {
       setupDone = true; poseRunning = false;
       if (pill) pill.textContent = '👍 세팅 완벽!';
-      playBeepOk();
-      speak('세팅이 완벽합니다. 5초 후 스윙 연습을 시작합니다.');
-      setCamStatus('5초 후 스윙 연습을 시작합니다');
-      setTimeout(kickoffFirstSwing, 5000);
+      playCameraReadyBeep();
+      speak('카메라 준비 완료. ' + getClubLabel() + ' 모드입니다.');
+      setCamStatus(getClubLabel() + ' — 곧 시작합니다');
+      setTimeout(kickoffFirstSwing, 4000);
     }
     return;
   }
@@ -295,30 +295,52 @@ function kickoffFirstSwing() {
     recVid.style.transformOrigin = autoZoomX.toFixed(1) + '% ' + autoZoomY.toFixed(1) + '%';
     recVid.style.transform = 'scale(' + autoZoomScale.toFixed(3) + ')';
   }
+  var lbl = document.getElementById('clubLabel');
+  if (lbl) lbl.textContent = getClubLabel();
   startVoiceRecognition();
   startNextSwingCountdown();
 }
 
 var KO_COUNTS = ['다섯', '넷', '셋', '둘', '하나'];
 
+var CLUB_DISPLAY_LABELS = {
+  '드라이버': '드라이버 스윙', '3W': '페어웨이우드 스윙', '5W': '페어웨이우드 스윙',
+  '4I': '롱아이언 스윙', '5I': '롱아이언 스윙',
+  '6I': '미들아이언 스윙', '7I': '미들아이언 스윙', '8I': '미들아이언 스윙',
+  '9I': '숏아이언 스윙', 'PW': '숏아이언 스윙',
+  'SW': '웨지 스윙', 'PT': '퍼터 스트로크'
+};
+
+function getClubLabel() {
+  if (!state.club) return '';
+  return CLUB_DISPLAY_LABELS[state.club] || state.club + ' 스윙';
+}
+
 function startNextSwingCountdown() {
   var phase = document.getElementById('recordPhase');
   var countdown = document.getElementById('recordCountdown');
   if (phase) phase.textContent = '스윙 준비';
   if (countdown) countdown.textContent = '';
-  var n = 0;
-  var t = setInterval(function () {
-    if (n < KO_COUNTS.length) {
-      speak(KO_COUNTS[n]);
-      playBeep();
-      if (countdown) countdown.textContent = 5 - n;
-      n++;
-    } else {
-      clearInterval(t);
-      if (countdown) countdown.textContent = '';
-      captureSwing();
-    }
-  }, 1000);
+
+  speak('준비');
+  playBeepOk();
+
+  setTimeout(function () {
+    var n = 0;
+    var t = setInterval(function () {
+      if (n < KO_COUNTS.length) {
+        speak(KO_COUNTS[n]);
+        playBeep();
+        if (countdown) countdown.textContent = 5 - n;
+        n++;
+      } else {
+        clearInterval(t);
+        if (countdown) countdown.textContent = '';
+        speak('스윙');
+        setTimeout(captureSwing, 600);
+      }
+    }, 1000);
+  }, 1200);
 }
 
 /* ── 4초 영상 녹화 + 실시간 포즈 프레임 수집 ── */
@@ -350,8 +372,12 @@ function captureSwing() {
 
   recorder.onstop = function () {
     state.videoBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
-    speak('스윙 완료. 분석을 시작합니다.');
-    uploadAndAnalyze();
+    playRecordEndSound();
+    if (phase) phase.textContent = '녹화 완료';
+    setTimeout(function () {
+      speak('스윙 완료. 분석을 시작합니다.');
+      uploadAndAnalyze();
+    }, 800);
   };
 }
 
@@ -1204,6 +1230,21 @@ function playBeepLong() {
     g.gain.setValueAtTime(0.4, ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
     o.start(); o.stop(ctx.currentTime + 0.55); o.onended = function () { ctx.close(); };
+  } catch (e) {}
+}
+function playRecordEndSound() {
+  try {
+    var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    var ctx = new C();
+    [880, 660, 440].forEach(function (f, i) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      var t = ctx.currentTime + i * 0.15;
+      g.gain.setValueAtTime(0.35, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      o.start(t); o.stop(t + 0.28);
+    });
+    setTimeout(function () { ctx.close(); }, 1000);
   } catch (e) {}
 }
 function playCameraReadyBeep() {
