@@ -787,44 +787,68 @@ function showSlowmoPlayer() {
     if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
   };
 
-  initTimelineSeek(video);
+  initTimelineSeek();
 }
 
-function initTimelineSeek(video) {
+var _seekVideo = null;
+var _seekBound = false;
+
+function initTimelineSeek() {
+  _seekVideo = document.getElementById('slowmoVideo');
   var timeline = document.getElementById('slowmoTimeline');
-  if (!timeline || timeline._seekBound) return;
-  timeline._seekBound = true;
+  if (!timeline) return;
 
   function seekTo(e) {
-    if (!video.duration) return;
+    var vid = _seekVideo;
+    if (!vid || !vid.duration) return;
     var rect = timeline.getBoundingClientRect();
     var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    video.currentTime = pct * video.duration;
+    vid.currentTime = pct * vid.duration;
 
     slowmoPauseIdx = 0;
     slowmoPaused = false;
     for (var i = 0; i < slowmoPausePoints.length; i++) {
-      if (slowmoPausePoints[i].time <= video.currentTime) slowmoPauseIdx = i + 1;
+      if (slowmoPausePoints[i].time <= vid.currentTime) slowmoPauseIdx = i + 1;
     }
 
     clearAnnotation();
+    updateTimelineUI(vid);
+
     var canvas = document.getElementById('slowmoCanvas');
     if (canvas) {
       var ctx = canvas.getContext('2d');
-      var phase = getCurrentPhase(video.currentTime);
-      var poseFrame = findClosestPoseFrame(video.currentTime);
-      drawOverlayFrame(ctx, canvas, video, poseFrame, phase, {});
+      var phase = getCurrentPhase(vid.currentTime);
+      var poseFrame = findClosestPoseFrame(vid.currentTime);
+      drawOverlayFrame(ctx, canvas, vid, poseFrame, phase, {});
     }
   }
 
+  if (_seekBound) return;
+  _seekBound = true;
+
   var dragging = false;
-  timeline.addEventListener('mousedown', function (e) { dragging = true; video.pause(); seekTo(e); });
-  timeline.addEventListener('touchstart', function (e) { dragging = true; video.pause(); seekTo(e); }, { passive: true });
+  timeline.addEventListener('mousedown', function (e) { dragging = true; if (_seekVideo) _seekVideo.pause(); seekTo(e); });
+  timeline.addEventListener('touchstart', function (e) { dragging = true; if (_seekVideo) _seekVideo.pause(); seekTo(e); }, { passive: true });
   document.addEventListener('mousemove', function (e) { if (dragging) seekTo(e); });
   document.addEventListener('touchmove', function (e) { if (dragging) seekTo(e); }, { passive: true });
-  document.addEventListener('mouseup', function () { if (dragging) { dragging = false; } });
-  document.addEventListener('touchend', function () { if (dragging) { dragging = false; } });
+  document.addEventListener('mouseup', function () { if (dragging) dragging = false; });
+  document.addEventListener('touchend', function () { if (dragging) dragging = false; });
+}
+
+function updateTimelineUI(video) {
+  if (!video || !video.duration) return;
+  var pct = (video.currentTime / video.duration * 100);
+  var progress = document.getElementById('timelineProgress');
+  if (progress) progress.style.width = pct + '%';
+  var handle = document.getElementById('timelineHandle');
+  if (handle) handle.style.left = pct + '%';
+  var timeEl = document.getElementById('slowmoTime');
+  if (timeEl) {
+    var s = Math.floor(video.currentTime);
+    var ms = Math.floor((video.currentTime - s) * 10);
+    timeEl.textContent = s + '.' + ms + 's';
+  }
 }
 
 function toggleSlowmo() {
@@ -975,11 +999,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
   var commentEl = document.getElementById('slowmoComment');
   if (commentEl) commentEl.textContent = comment;
 
-  var progress = document.getElementById('timelineProgress');
-  var t = video.currentTime;
-  if (progress && video.duration) {
-    progress.style.width = (t / video.duration * 100) + '%';
-  }
+  updateTimelineUI(video);
 
   if (!poseFrame || !poseFrame.landmarks) return;
   var lms = poseFrame.landmarks;

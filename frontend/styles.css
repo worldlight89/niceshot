@@ -711,8 +711,8 @@ html, body {
 
 .slowmo-timeline {
   flex: 1;
-  height: 28px;
-  padding: 11px 0;
+  height: 36px;
+  padding: 14px 0;
   background: transparent;
   position: relative;
   cursor: pointer;
@@ -724,8 +724,8 @@ html, body {
   left: 0; right: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 6px;
-  background: rgba(255,255,255,0.15);
+  height: 5px;
+  background: rgba(255,255,255,0.2);
   border-radius: 3px;
 }
 
@@ -734,11 +734,34 @@ html, body {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 6px;
+  height: 5px;
   background: #2d6a4f;
   border-radius: 3px;
   width: 0;
-  transition: width 0.1s linear;
+}
+
+.timeline-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 2px solid #2d6a4f;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.slowmo-time {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  flex-shrink: 0;
+  min-width: 30px;
+  text-align: center;
 }
 
 .slowmo-speed {
