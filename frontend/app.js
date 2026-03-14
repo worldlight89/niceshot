@@ -1003,10 +1003,7 @@ function showAnnotation(num, phaseLabel, desc, type) {
   if (type === 'done') {
     el.innerHTML = '<div class="annotation-ok">✅ 분석 완료</div>';
   } else {
-    el.innerHTML = '<div class="annotation-text">' +
-      '<span class="anno-num">' + num + '</span> ' +
-      '<span class="anno-phase">' + escapeHtml(phaseLabel) + '</span><br>' +
-      escapeHtml(desc) + '</div>';
+    el.innerHTML = '';
   }
 }
 function clearAnnotation() {
@@ -1046,8 +1043,8 @@ function startSlowmoOverlay() {
         video.pause();
 
         updatePhaseDots(slowmoProblemIdx);
-        showAnnotation(stop.num, stop.phaseLabel, stop.description);
-        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, stop.joints);
+        clearAnnotation();
+        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, stop.joints, stop);
 
         setTapHint(true);
         slowmoAnimId = null;
@@ -1055,7 +1052,7 @@ function startSlowmoOverlay() {
       }
     }
 
-    drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, {});
+    drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, {}, null);
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
@@ -1063,7 +1060,7 @@ function startSlowmoOverlay() {
   slowmoAnimId = requestAnimationFrame(drawFrame);
 }
 
-function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints) {
+function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints, stopInfo) {
   var w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
@@ -1075,6 +1072,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
   var hasHL = false;
   for (var k in highlightJoints) { hasHL = true; break; }
 
+  /* skeleton lines */
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
     var conn = POSE_CONNECTIONS[ci];
     var a = lms[conn[0]], b = lms[conn[1]];
@@ -1089,6 +1087,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
     ctx.stroke();
   }
 
+  /* joint dots */
   for (var li = 0; li < lms.length; li++) {
     var lm = lms[li];
     if (!lm || lm.visibility < 0.25) continue;
@@ -1099,7 +1098,10 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
     ctx.fill();
   }
 
+  /* highlight rings on problem joints */
+  var hlCenter = null;
   if (hasHL) {
+    var hlCount = 0, hlSumX = 0, hlSumY = 0;
     for (var ji in highlightJoints) {
       var idx = parseInt(ji);
       if (isNaN(idx) || !lms[idx] || lms[idx].visibility < 0.2) continue;
@@ -1117,8 +1119,131 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,68,68,0.12)';
       ctx.fill();
+
+      hlSumX += cx; hlSumY += cy; hlCount++;
+    }
+    if (hlCount > 0) hlCenter = { x: hlSumX / hlCount, y: hlSumY / hlCount };
+  }
+
+  /* draw problem label ON the canvas when paused */
+  if (stopInfo && hlCenter) {
+    var fontSize = Math.max(13, Math.round(w * 0.032));
+    var padding = Math.round(fontSize * 0.6);
+    var maxTextW = w * 0.55;
+
+    ctx.font = 'bold ' + fontSize + 'px sans-serif';
+
+    var descLines = wrapText(ctx, stopInfo.description, maxTextW);
+    var lineH = fontSize * 1.35;
+    var boxW = 0;
+    for (var i = 0; i < descLines.length; i++) {
+      var lw = ctx.measureText(descLines[i]).width;
+      if (lw > boxW) boxW = lw;
+    }
+    boxW += padding * 2;
+    var boxH = descLines.length * lineH + padding * 1.6;
+
+    var numR = Math.round(fontSize * 0.75);
+    var totalH = numR * 2 + 6 + boxH;
+
+    var bx = hlCenter.x + Math.max(30, w * 0.08);
+    var by = hlCenter.y - totalH / 2;
+
+    if (bx + boxW > w - 10) bx = hlCenter.x - boxW - Math.max(30, w * 0.08);
+    if (bx < 10) bx = 10;
+    if (by < 10) by = 10;
+    if (by + totalH > h - 10) by = h - totalH - 10;
+
+    /* connector line */
+    ctx.beginPath();
+    ctx.moveTo(hlCenter.x, hlCenter.y);
+    ctx.lineTo(bx, by + totalH / 2);
+    ctx.strokeStyle = 'rgba(255,68,68,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    /* number circle + phase label */
+    var numCx = bx + numR;
+    var numCy = by + numR;
+    ctx.beginPath();
+    ctx.arc(numCx, numCy, numR, 0, Math.PI * 2);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fill();
+    ctx.font = 'bold ' + Math.round(fontSize * 0.85) + 'px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('' + stopInfo.num, numCx, numCy);
+
+    if (stopInfo.phaseLabel) {
+      var plFont = Math.round(fontSize * 0.7);
+      ctx.font = 'bold ' + plFont + 'px sans-serif';
+      var plW = ctx.measureText(stopInfo.phaseLabel).width + plFont;
+      var plH = plFont * 1.6;
+      var plX = numCx + numR + 6;
+      var plY = numCy - plH / 2;
+      ctx.fillStyle = 'rgba(231,76,60,0.25)';
+      roundRect(ctx, plX, plY, plW, plH, plH / 2);
+      ctx.fill();
+      ctx.fillStyle = '#e74c3c';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(stopInfo.phaseLabel, plX + plFont * 0.5, numCy);
+    }
+
+    /* description box */
+    var descY = numCy + numR + 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    var rr = Math.round(fontSize * 0.4);
+    roundRect(ctx, bx, descY, boxW, boxH, rr);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,68,68,0.7)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, bx, descY, boxW, boxH, rr);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + fontSize + 'px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (var i = 0; i < descLines.length; i++) {
+      ctx.fillText(descLines[i], bx + padding, descY + padding * 0.6 + i * lineH);
     }
   }
+}
+
+function wrapText(ctx, text, maxW) {
+  var words = text.split('');
+  var lines = [];
+  var line = '';
+  for (var i = 0; i < words.length; i++) {
+    var test = line + words[i];
+    if (ctx.measureText(test).width > maxW && line.length > 0) {
+      lines.push(line);
+      line = words[i];
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 /* ================================================================
