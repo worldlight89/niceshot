@@ -913,6 +913,8 @@ var slowmoPaused = false;
 var slowmoTapBound = false;
 var slowmoPhaseStops = [];
 
+var ISSUE_COLORS = ['#FF4444', '#FFD700', '#2ECC71'];
+
 function buildPhaseStops() {
   var stops = [];
   var ranges = getPhaseRanges();
@@ -920,13 +922,18 @@ function buildPhaseStops() {
 
   var phaseGrades = (state.analysisResult && state.analysisResult.phase_grades) || {};
   var corrections = (state.analysisResult && state.analysisResult.corrections) || {};
-  var problems = (state.analysisResult && state.analysisResult.problems) || [];
+  var faults = (state.analysisResult && state.analysisResult.faults) || [];
 
-  var phaseProblemMap = {};
-  for (var i = 0; i < problems.length; i++) {
-    var pk = problems[i].phase;
-    if (!phaseProblemMap[pk]) phaseProblemMap[pk] = [];
-    phaseProblemMap[pk].push(problems[i]);
+  /* group ALL faults by phase, sorted by deduction within each phase */
+  var phaseFaultMap = {};
+  for (var i = 0; i < faults.length; i++) {
+    var f = faults[i];
+    var pk = f.phase;
+    if (!phaseFaultMap[pk]) phaseFaultMap[pk] = [];
+    phaseFaultMap[pk].push(f);
+  }
+  for (var pk in phaseFaultMap) {
+    phaseFaultMap[pk].sort(function (a, b) { return b.deduction - a.deduction; });
   }
 
   for (var r = 0; r < ranges.length; r++) {
@@ -935,23 +942,30 @@ function buildPhaseStops() {
     var pauseTime = pauseTimes ? pauseTimes[r] : (range.start + range.end) / 2;
 
     var grade = phaseGrades[phaseKey] || 'good';
-    var phaseProbs = phaseProblemMap[phaseKey] || [];
+    var phaseFaults = (phaseFaultMap[phaseKey] || []).slice(0, 3);
 
-    var mainProb = phaseProbs.length > 0 ? phaseProbs[0] : null;
+    var issues = [];
+    var pc = corrections[phaseKey] || [];
 
-    var joints = {};
-    if (mainProb) {
-      var pc = corrections[phaseKey];
-      if (pc && pc.length > 0) {
-        var c = pc[0];
-        joints[c.joint_idx] = true;
-        if (c.vertex_idx !== undefined) joints[c.vertex_idx] = true;
-        if (c.anchor_idx !== undefined) joints[c.anchor_idx] = true;
-        if (c.endpoint_idx !== undefined) joints[c.endpoint_idx] = true;
+    for (var fi = 0; fi < phaseFaults.length; fi++) {
+      var fault = phaseFaults[fi];
+      var jointIdx = fault.joint_idx;
+      var joints = {};
+      joints[jointIdx] = true;
+      for (var ci = 0; ci < pc.length; ci++) {
+        if (pc[ci].joint_idx === jointIdx) {
+          if (pc[ci].vertex_idx !== undefined) joints[pc[ci].vertex_idx] = true;
+          if (pc[ci].anchor_idx !== undefined) joints[pc[ci].anchor_idx] = true;
+          if (pc[ci].endpoint_idx !== undefined) joints[pc[ci].endpoint_idx] = true;
+        }
       }
+      issues.push({
+        color: ISSUE_COLORS[fi],
+        description: fault.friendly_ko || fault.label_ko || '',
+        joints: joints,
+        jointIdx: jointIdx
+      });
     }
-
-    var desc = mainProb ? (mainProb.description || mainProb.detail || '') : '';
 
     stops.push({
       idx: r + 1,
@@ -959,9 +973,8 @@ function buildPhaseStops() {
       phaseKey: phaseKey,
       phaseLabel: range.label,
       grade: grade,
-      description: desc,
-      joints: joints,
-      hasProblems: mainProb !== null
+      issues: issues,
+      hasProblems: issues.length > 0
     });
   }
 
@@ -1148,8 +1161,7 @@ function startSlowmoOverlay() {
 
         updatePhaseDots(slowmoPhaseIdx);
         clearAnnotation();
-        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData,
-          stop.hasProblems ? stop.joints : {}, stop);
+        drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, stop);
 
         setTapHint(true);
         slowmoAnimId = null;
@@ -1157,7 +1169,7 @@ function startSlowmoOverlay() {
       }
     }
 
-    drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, {}, null);
+    drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, null);
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
@@ -1165,17 +1177,26 @@ function startSlowmoOverlay() {
   slowmoAnimId = requestAnimationFrame(drawFrame);
 }
 
-function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints, stopInfo) {
+function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-
   updateTimelineUI(video);
 
   if (!poseFrame || !poseFrame.landmarks) return;
   var lms = poseFrame.landmarks;
   var DOT_R = Math.max(4, w * 0.01);
+
+  /* build joint→color map from issues */
+  var jointColorMap = {};
+  var issues = (stopInfo && stopInfo.issues) || [];
+  for (var ii = 0; ii < issues.length; ii++) {
+    var iss = issues[ii];
+    for (var jk in iss.joints) {
+      if (!jointColorMap[jk]) jointColorMap[jk] = iss.color;
+    }
+  }
   var hasHL = false;
-  for (var k in highlightJoints) { hasHL = true; break; }
+  for (var k in jointColorMap) { hasHL = true; break; }
 
   /* skeleton lines */
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
@@ -1183,12 +1204,16 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints,
     var a = lms[conn[0]], b = lms[conn[1]];
     if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
 
-    var connHL = hasHL && ((conn[0] in highlightJoints) || (conn[1] in highlightJoints));
+    var lineColor = null;
+    if (hasHL) {
+      if (jointColorMap[conn[0]]) lineColor = jointColorMap[conn[0]];
+      else if (jointColorMap[conn[1]]) lineColor = jointColorMap[conn[1]];
+    }
     ctx.beginPath();
     ctx.moveTo(a.x * w, a.y * h);
     ctx.lineTo(b.x * w, b.y * h);
-    ctx.lineWidth = connHL ? Math.max(4, w * 0.008) : Math.max(2, w * 0.005);
-    ctx.strokeStyle = connHL ? 'rgba(255,68,68,0.85)' : 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = lineColor ? Math.max(4, w * 0.008) : Math.max(2, w * 0.005);
+    ctx.strokeStyle = lineColor ? lineColor + 'D9' : 'rgba(255,255,255,0.35)';
     ctx.stroke();
   }
 
@@ -1196,135 +1221,135 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints,
   for (var li = 0; li < lms.length; li++) {
     var lm = lms[li];
     if (!lm || lm.visibility < 0.25) continue;
-    var isHL = hasHL && (li in highlightJoints);
+    var jColor = jointColorMap[li];
     ctx.beginPath();
-    ctx.arc(lm.x * w, lm.y * h, isHL ? DOT_R * 1.6 : DOT_R, 0, Math.PI * 2);
-    ctx.fillStyle = isHL ? '#FF4444' : 'rgba(255,255,255,0.5)';
+    ctx.arc(lm.x * w, lm.y * h, jColor ? DOT_R * 1.6 : DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = jColor || 'rgba(255,255,255,0.5)';
     ctx.fill();
   }
 
-  /* highlight rings on problem joints */
-  var hlCenter = null;
+  /* highlight rings on problem joints with their color */
   if (hasHL) {
-    var hlCount = 0, hlSumX = 0, hlSumY = 0;
-    for (var ji in highlightJoints) {
-      var idx = parseInt(ji);
-      if (isNaN(idx) || !lms[idx] || lms[idx].visibility < 0.2) continue;
-      var hj = lms[idx];
+    for (var ii = 0; ii < issues.length; ii++) {
+      var iss = issues[ii];
+      var mainIdx = iss.jointIdx;
+      if (mainIdx === undefined || !lms[mainIdx] || lms[mainIdx].visibility < 0.2) continue;
+      var hj = lms[mainIdx];
       var cx = hj.x * w, cy = hj.y * h;
-      var R = Math.max(18, w * 0.05);
+      var R = Math.max(18, w * 0.045);
 
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,68,68,0.8)';
+      ctx.strokeStyle = iss.color;
       ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,68,68,0.12)';
+      ctx.fillStyle = iss.color + '20';
       ctx.fill();
-
-      hlSumX += cx; hlSumY += cy; hlCount++;
     }
-    if (hlCount > 0) hlCenter = { x: hlSumX / hlCount, y: hlSumY / hlCount };
   }
 
   /* draw phase info ON the canvas when paused */
-  if (stopInfo) {
-    var fontSize = Math.max(13, Math.round(w * 0.032));
-    var padding = Math.round(fontSize * 0.6);
-    var maxTextW = w * 0.5;
-    var lineH = fontSize * 1.35;
-    var numR = Math.round(fontSize * 0.8);
-    var isGood = !stopInfo.hasProblems;
-    var accentColor = isGood ? '#27ae60' : '#e74c3c';
+  if (!stopInfo) return;
 
-    if (stopInfo.hasProblems && hlCenter) {
-      ctx.beginPath();
-      ctx.moveTo(hlCenter.x, hlCenter.y);
-      var lineTarget = { x: w * 0.05, y: h * 0.08 };
-      ctx.lineTo(lineTarget.x + maxTextW * 0.5, lineTarget.y + numR * 2 + 10);
-      ctx.strokeStyle = 'rgba(255,68,68,0.5)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+  var fontSize = Math.max(12, Math.round(w * 0.028));
+  var padding = Math.round(fontSize * 0.5);
+  var lineH = fontSize * 1.3;
+  var numR = Math.round(fontSize * 0.75);
+  var isGood = !stopInfo.hasProblems;
+  var accentColor = isGood ? '#27ae60' : '#e74c3c';
 
-    var bx = w * 0.04;
-    var by = h * 0.06;
+  var bx = w * 0.03;
+  var by = h * 0.04;
 
-    /* phase number + label */
-    var numCx = bx + numR;
-    var numCy = by + numR;
-    ctx.beginPath();
-    ctx.arc(numCx, numCy, numR, 0, Math.PI * 2);
-    ctx.fillStyle = accentColor;
-    ctx.fill();
-    ctx.font = 'bold ' + Math.round(fontSize * 0.85) + 'px sans-serif';
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('' + stopInfo.idx, numCx, numCy);
+  /* phase number + label */
+  var numCx = bx + numR;
+  var numCy = by + numR;
+  ctx.beginPath();
+  ctx.arc(numCx, numCy, numR, 0, Math.PI * 2);
+  ctx.fillStyle = accentColor;
+  ctx.fill();
+  ctx.font = 'bold ' + Math.round(fontSize * 0.85) + 'px sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('' + stopInfo.idx, numCx, numCy);
 
-    var plFont = Math.round(fontSize * 0.8);
-    ctx.font = 'bold ' + plFont + 'px sans-serif';
-    var labelText = stopInfo.phaseLabel;
-    var plW = ctx.measureText(labelText).width + plFont;
-    var plH = plFont * 1.7;
-    var plX = numCx + numR + 8;
-    var plY = numCy - plH / 2;
-    ctx.fillStyle = accentColor + '40';
-    roundRect(ctx, plX, plY, plW, plH, plH / 2);
-    ctx.fill();
-    ctx.fillStyle = accentColor;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(labelText, plX + plFont * 0.5, numCy);
+  var plFont = Math.round(fontSize * 0.75);
+  ctx.font = 'bold ' + plFont + 'px sans-serif';
+  var labelText = stopInfo.phaseLabel;
+  var plW = ctx.measureText(labelText).width + plFont;
+  var plH = plFont * 1.6;
+  var plX = numCx + numR + 6;
+  var plY = numCy - plH / 2;
+  ctx.fillStyle = accentColor + '40';
+  roundRect(ctx, plX, plY, plW, plH, plH / 2);
+  ctx.fill();
+  ctx.fillStyle = accentColor;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(labelText, plX + plFont * 0.4, numCy);
 
-    /* description or "good" */
-    var descY = numCy + numR + 8;
+  /* issues list or "good" */
+  var listY = numCy + numR + 6;
+
+  if (isGood) {
     ctx.font = 'bold ' + fontSize + 'px sans-serif';
+    var goodText = '✓ 좋습니다';
+    var gw = ctx.measureText(goodText).width + padding * 2;
+    var gh = lineH + padding;
+    ctx.fillStyle = 'rgba(39,174,96,0.25)';
+    roundRect(ctx, bx, listY, gw, gh, fontSize * 0.35);
+    ctx.fill();
+    ctx.fillStyle = '#27ae60';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(goodText, bx + padding, listY + padding * 0.35);
+    return;
+  }
 
-    if (isGood) {
-      var goodText = '✓ 좋습니다';
-      var gw = ctx.measureText(goodText).width + padding * 2;
-      var gh = lineH + padding;
-      ctx.fillStyle = 'rgba(39,174,96,0.2)';
-      roundRect(ctx, bx, descY, gw, gh, fontSize * 0.4);
-      ctx.fill();
-      ctx.fillStyle = '#27ae60';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(goodText, bx + padding, descY + padding * 0.4);
-    } else {
-      var descLines = wrapText(ctx, stopInfo.description, maxTextW);
-      if (descLines.length > 3) descLines = descLines.slice(0, 3);
-      var boxW = 0;
-      for (var i = 0; i < descLines.length; i++) {
-        var lw = ctx.measureText(descLines[i]).width;
-        if (lw > boxW) boxW = lw;
-      }
-      boxW = Math.max(boxW + padding * 2, plW + plX - bx);
-      var boxH = descLines.length * lineH + padding * 1.6;
+  /* draw each issue as a colored card */
+  var maxTextW = w * 0.52;
+  ctx.font = fontSize + 'px sans-serif';
+  var cardY = listY;
 
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      var rr = Math.round(fontSize * 0.4);
-      roundRect(ctx, bx, descY, boxW, boxH, rr);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,68,68,0.7)';
-      ctx.lineWidth = 2;
-      roundRect(ctx, bx, descY, boxW, boxH, rr);
-      ctx.stroke();
+  for (var ii = 0; ii < issues.length; ii++) {
+    var iss = issues[ii];
+    var color = iss.color;
+    var text = iss.description;
 
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      for (var i = 0; i < descLines.length; i++) {
-        ctx.fillText(descLines[i], bx + padding, descY + padding * 0.6 + i * lineH);
-      }
+    ctx.font = fontSize + 'px sans-serif';
+    var lines = wrapText(ctx, text, maxTextW - padding * 2 - fontSize);
+    if (lines.length > 2) lines = lines.slice(0, 2);
+    var cardH = lines.length * lineH + padding;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    roundRect(ctx, bx, cardY, maxTextW, cardH, fontSize * 0.3);
+    ctx.fill();
+
+    ctx.fillStyle = color;
+    roundRect(ctx, bx, cardY, 4, cardH, 2);
+    ctx.fill();
+
+    var dotR = fontSize * 0.35;
+    var dotCx = bx + padding + dotR;
+    var dotCy = cardY + cardH / 2;
+    if (lines.length > 1) dotCy = cardY + lineH * 0.5 + padding * 0.3;
+    ctx.beginPath();
+    ctx.arc(dotCx, dotCy, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (var li = 0; li < lines.length; li++) {
+      ctx.fillText(lines[li], dotCx + dotR + 6, cardY + padding * 0.3 + li * lineH);
     }
+
+    cardY += cardH + 4;
   }
 }
 
