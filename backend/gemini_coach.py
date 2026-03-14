@@ -21,29 +21,58 @@ def _placeholder(clip_idx: int) -> CoachingResult:
     )
 
 
-# ─── Vertex AI 초기화 ────────────────────────────────────────────────
-_init_done = False
-_init_error = ""
-
-def _ensure_vertexai():
-    global _init_done, _init_error
-    if _init_done:
-        return _init_error == ""
-    _init_done = True
+# ─── Gemini 호출 (Generative Language API + 서비스 계정) ─────────────
+def _call_gemini(content_parts: list) -> str | None:
+    """서비스 계정으로 Generative Language API 호출"""
     try:
-        import vertexai
-        project = os.environ.get("VERTEX_PROJECT_ID", "").strip()
-        location = os.environ.get("VERTEX_LOCATION", "us-central1").strip() or "us-central1"
-        if not project:
-            _init_error = "VERTEX_PROJECT_ID 환경변수 없음"
-            return False
-        vertexai.init(project=project, location=location)
-        print(f"[Vertex AI] Initialized: project={project}, location={location}")
-        return True
+        import google.auth
+        import google.auth.transport.requests as gauth_req
+        import requests as req
+
+        creds, _ = google.auth.default(
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/generative-language",
+            ]
+        )
+        creds.refresh(gauth_req.Request())
+
+        model = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+        # 버전 번호 제거 (gemini-2.0-flash-001 → gemini-2.0-flash)
+        if model.endswith("-001") or model.endswith("-002"):
+            model = model.rsplit("-", 1)[0]
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {
+            "Authorization": f"Bearer {creds.token}",
+            "Content-Type": "application/json",
+        }
+
+        parts_json = []
+        for p in content_parts:
+            if p.get("type") == "image":
+                parts_json.append({
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": base64.b64encode(p["bytes"]).decode("utf-8")
+                    }
+                })
+            elif p.get("type") == "text":
+                parts_json.append({"text": p["text"]})
+
+        body = {"contents": [{"role": "user", "parts": parts_json}]}
+        r = req.post(url, headers=headers, json=body, timeout=60)
+
+        if r.status_code == 200:
+            rj = r.json()
+            text = rj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            return text
+        else:
+            print(f"[Gemini] HTTP {r.status_code}: {r.text[:300]}")
+            return None
     except Exception as e:
-        _init_error = f"Vertex AI init 실패: {type(e).__name__}: {e}"
-        print(f"[Vertex AI] {_init_error}")
-        return False
+        print(f"[Gemini] Error: {type(e).__name__}: {e}")
+        return None
 
 
 # ─── 프로 골프 코치 프롬프트 (7구간 JSON 응답) ───────────────────────
@@ -84,30 +113,6 @@ def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
 }}""".strip()
 
 
-# ─── Gemini API Key 방식 (Vertex AI 실패 시 폴백) ────────────────────
-def _call_gemini_apikey(content_parts_data: list, prompt: str) -> str | None:
-    """GEMINI_API_KEY 환경변수로 Gemini 호출"""
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        return None
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        parts = []
-        for item in content_parts_data:
-            if item["type"] == "image":
-                parts.append({"mime_type": "image/jpeg", "data": item["bytes"]})
-            else:
-                parts.append(item["text"])
-        parts.append(prompt)
-        resp = model.generate_content(parts)
-        return (resp.text or "").strip()
-    except Exception as e:
-        print(f"[Gemini API Key] Error: {type(e).__name__}: {e}")
-        return None
-
-
 # ─── 메인 함수 ───────────────────────────────────────────────────────
 FRAME_KEYS = [
     ("address",       "어드레스"),
@@ -127,7 +132,7 @@ def coach_with_gemini(
     club: str = "",
 ) -> CoachingResult:
     metrics_by_phase: dict[str, dict] = {}
-    image_data: list[dict] = []
+    content_parts: list[dict] = []
 
     for key, label in FRAME_KEYS:
         frame_data = frames.get(key, {})
@@ -138,35 +143,15 @@ def coach_with_gemini(
             raw = b64.split(",")[-1] if "," in b64 else b64
             try:
                 image_bytes = base64.b64decode(raw)
-                image_data.append({"type": "image", "bytes": image_bytes, "label": label})
+                content_parts.append({"type": "image", "bytes": image_bytes})
+                content_parts.append({"type": "text", "text": f"[{label} 프레임]"})
             except Exception:
                 pass
 
     prompt = _build_prompt(clip_idx, club, notes, metrics_by_phase)
-    text = None
+    content_parts.append({"type": "text", "text": prompt})
 
-    # 방법 1: Vertex AI SDK
-    if _ensure_vertexai():
-        try:
-            from vertexai.generative_models import GenerativeModel, Part, Image
-            model_name = os.environ.get("VERTEX_MODEL", "gemini-2.0-flash-001").strip() or "gemini-2.0-flash-001"
-            content_parts = []
-            for item in image_data:
-                content_parts.append(Part.from_image(Image.from_bytes(item["bytes"])))
-                content_parts.append(Part.from_text(f"[{item['label']} 프레임]"))
-            content_parts.append(Part.from_text(prompt))
-            model = GenerativeModel(model_name)
-            resp = model.generate_content(content_parts)
-            text = (resp.text or "").strip()
-            print(f"[Vertex AI] Success for swing {clip_idx}")
-        except Exception as e:
-            print(f"[Vertex AI] Call failed: {type(e).__name__}: {e}")
-            text = None
-
-    # 방법 2: Gemini API Key 폴백
-    if not text:
-        print(f"[Gemini] Trying API Key fallback...")
-        text = _call_gemini_apikey(image_data, prompt)
+    text = _call_gemini(content_parts)
 
     if not text:
         return _placeholder(clip_idx)

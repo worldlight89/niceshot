@@ -80,7 +80,11 @@ def test_gemini() -> dict[str, Any]:
         import google.auth
         import google.auth.transport.requests as gauth_req
         creds, auto_project = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-platform",
+                "https://www.googleapis.com/auth/generative-language",
+                "https://www.googleapis.com/auth/generative-language.retriever",
+            ]
         )
         creds.refresh(gauth_req.Request())
         info["token_ok"] = True
