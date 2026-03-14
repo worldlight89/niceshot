@@ -14,16 +14,38 @@ class CoachingResult:
     summary: str = ""
 
 
-def _placeholder(clip_idx: int) -> CoachingResult:
+def _placeholder() -> CoachingResult:
     return CoachingResult(
-        summary=f"[클립 {clip_idx}] 데모 피드백",
-        coaching='{"address":{"corrections":[],"comment":"데모 모드"},"takeaway":{"corrections":[],"comment":"데모"},"top":{"corrections":[],"comment":"데모"},"transition":{"corrections":[],"comment":"데모"},"impact":{"corrections":[],"comment":"데모"},"followthrough":{"corrections":[],"comment":"데모"},"finish":{"corrections":[],"comment":"데모"},"today_focus":"Gemini 연결 후 실제 분석 제공","drill":{"name":"셋업","method":"데모","reps":"10회"}}',
+        summary="데모 모드",
+        coaching=json.dumps(
+            {
+                "score": 0,
+                "problems": [
+                    {
+                        "phase": "address",
+                        "joint": "left_shoulder",
+                        "direction": "down",
+                        "description": "Gemini 연결 후 실제 분석 제공",
+                    }
+                ],
+                "phase_comments": {
+                    "address": "데모",
+                    "takeaway": "데모",
+                    "top": "데모",
+                    "transition": "데모",
+                    "impact": "데모",
+                    "followthrough": "데모",
+                    "finish": "데모",
+                },
+                "drill": {"name": "셋업 드릴", "method": "데모 모드입니다", "reps": "-"},
+            },
+            ensure_ascii=False,
+        ),
     )
 
 
 # ─── Gemini 호출 (Generative Language API + 서비스 계정) ─────────────
 def _call_gemini(content_parts: list) -> str | None:
-    """서비스 계정으로 Generative Language API 호출"""
     try:
         import google.auth
         import google.auth.transport.requests as gauth_req
@@ -49,111 +71,101 @@ def _call_gemini(content_parts: list) -> str | None:
 
         parts_json = []
         for p in content_parts:
-            if p.get("type") == "image":
-                parts_json.append({
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
-                        "data": base64.b64encode(p["bytes"]).decode("utf-8")
+            if p.get("type") == "video":
+                parts_json.append(
+                    {
+                        "inline_data": {
+                            "mime_type": p.get("mime_type", "video/mp4"),
+                            "data": base64.b64encode(p["bytes"]).decode("utf-8"),
+                        }
                     }
-                })
+                )
             elif p.get("type") == "text":
                 parts_json.append({"text": p["text"]})
 
         body = {"contents": [{"role": "user", "parts": parts_json}]}
-        r = req.post(url, headers=headers, json=body, timeout=60)
+        r = req.post(url, headers=headers, json=body, timeout=90)
 
         if r.status_code == 200:
             rj = r.json()
-            text = rj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            return text
+            return (
+                rj.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
         else:
-            print(f"[Gemini] HTTP {r.status_code}: {r.text[:300]}")
+            print(f"[Gemini] HTTP {r.status_code}: {r.text[:500]}")
             return None
     except Exception as e:
         print(f"[Gemini] Error: {type(e).__name__}: {e}")
         return None
 
 
-# ─── 프로 골프 코치 프롬프트 (7구간 JSON 응답) ───────────────────────
-def _build_prompt(clip_idx: int, club: str, notes: str, metrics: dict) -> str:
+# ─── 프로 골프 코치 프롬프트 ──────────────────────────────────────────
+def _build_prompt(club: str, notes: str, metrics: dict) -> str:
     addr_m = json.dumps(metrics.get("address", {}), ensure_ascii=False)
-    top_m  = json.dumps(metrics.get("top",     {}), ensure_ascii=False)
-    imp_m  = json.dumps(metrics.get("impact",  {}), ensure_ascii=False)
+    top_m = json.dumps(metrics.get("top", {}), ensure_ascii=False)
+    imp_m = json.dumps(metrics.get("impact", {}), ensure_ascii=False)
 
-    concern_line = f"\n[골퍼의 고민] {notes}" if notes else ""
+    concern = f"\n[골퍼의 고민] {notes}" if notes else ""
     return f"""당신은 PGA 투어 출신의 20년 경력 골프 코치입니다.
 
-[클럽] {club or '미지정'}{concern_line}
+[클럽] {club or '미지정'}{concern}
 [카메라] 후방에서 타깃 방향 촬영
 
-첨부된 7장 사진(어드레스→테이크어웨이→백스윙탑→트랜지션→임팩트→팔로스루→피니시)을 분석하세요.
-사진 우선, 아래 측정값은 참고용:
-[어드레스] {addr_m}  [백스윙탑] {top_m}  [임팩트] {imp_m}
+첨부 영상은 골퍼의 풀 스윙(약 4초)입니다.
+어드레스→테이크어웨이→백스윙탑→트랜지션→임팩트→팔로스루→피니시 전 구간을 분석하세요.
+
+MediaPipe 참고 수치:
+[어드레스] {addr_m}
+[백스윙탑] {top_m}
+[임팩트] {imp_m}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 반드시 아래 JSON 형식으로만 응답. JSON 외 텍스트 절대 금지.
+⚠️ 반드시 아래 JSON만 응답. 다른 텍스트 금지.
 
 규칙:
-- corrections: 실제 문제 있는 관절만 포함 (문제없으면 빈 배열)
-- comment: 핵심 1문장만 (짧고 명확하게)
-- joint: left_shoulder/right_shoulder/left_elbow/right_elbow/left_wrist/right_wrist/left_hip/right_hip/left_knee/right_knee/left_ankle/right_ankle 중 선택
-- direction: up/down/forward/back/left/right 중 선택
+- score: 0~100 정수
+- problems: 가장 심각한 문제 최대 3개 (없으면 빈 배열)
+- phase_comments: 7구간별 한 줄 코멘트
+- joint: left_shoulder/right_shoulder/left_elbow/right_elbow/left_wrist/right_wrist/left_hip/right_hip/left_knee/right_knee/left_ankle/right_ankle
+- direction: up/down/forward/back/left/right
+- description: 문제+교정 한 문장
 
 {{
-  "address":       {{"corrections": [{{"joint":"관절","direction":"방향","comment":"1문장"}}], "comment":"1문장"}},
-  "takeaway":      {{"corrections": [], "comment":"1문장"}},
-  "top":           {{"corrections": [], "comment":"1문장"}},
-  "transition":    {{"corrections": [], "comment":"1문장"}},
-  "impact":        {{"corrections": [], "comment":"1문장"}},
-  "followthrough": {{"corrections": [], "comment":"1문장"}},
-  "finish":        {{"corrections": [], "comment":"1문장"}},
-  "today_focus": "오늘 딱 하나의 핵심 교정 (15자 이내)",
+  "score": 78,
+  "problems": [
+    {{"phase":"구간키","joint":"관절","direction":"방향","description":"한 문장"}}
+  ],
+  "phase_comments": {{
+    "address":"1문장","takeaway":"1문장","top":"1문장",
+    "transition":"1문장","impact":"1문장","followthrough":"1문장","finish":"1문장"
+  }},
   "drill": {{"name":"드릴명","method":"방법 2~3문장","reps":"횟수"}}
 }}""".strip()
 
 
 # ─── 메인 함수 ───────────────────────────────────────────────────────
-FRAME_KEYS = [
-    ("address",       "어드레스"),
-    ("takeaway",      "테이크어웨이"),
-    ("top",           "백스윙 탑"),
-    ("transition",    "트랜지션"),
-    ("impact",        "임팩트"),
-    ("followthrough", "팔로스루"),
-    ("finish",        "피니시"),
-]
-
-def coach_with_gemini(
+def coach_with_video(
     *,
-    clip_idx: int,
-    frames: dict[str, Any],
+    video_bytes: bytes,
+    video_mime: str = "video/mp4",
     notes: str = "",
     club: str = "",
+    metrics: dict[str, Any] | None = None,
 ) -> CoachingResult:
-    metrics_by_phase: dict[str, dict] = {}
-    content_parts: list[dict] = []
+    content_parts: list[dict] = [
+        {"type": "video", "bytes": video_bytes, "mime_type": video_mime},
+        {"type": "text", "text": "[골프 스윙 영상]"},
+    ]
 
-    for key, label in FRAME_KEYS:
-        frame_data = frames.get(key, {})
-        b64 = frame_data.get("base64", "") if isinstance(frame_data, dict) else ""
-        metrics_by_phase[key] = frame_data.get("metrics", {}) if isinstance(frame_data, dict) else {}
-
-        if b64:
-            raw = b64.split(",")[-1] if "," in b64 else b64
-            try:
-                image_bytes = base64.b64decode(raw)
-                content_parts.append({"type": "image", "bytes": image_bytes})
-                content_parts.append({"type": "text", "text": f"[{label} 프레임]"})
-            except Exception:
-                pass
-
-    prompt = _build_prompt(clip_idx, club, notes, metrics_by_phase)
+    prompt = _build_prompt(club, notes, metrics or {})
     content_parts.append({"type": "text", "text": prompt})
 
     text = _call_gemini(content_parts)
-
     if not text:
-        return _placeholder(clip_idx)
+        return _placeholder()
 
     text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"```\s*", "", text)
@@ -161,8 +173,9 @@ def coach_with_gemini(
 
     try:
         parsed = json.loads(text)
-        summary = parsed.get("today_focus", f"스윙 {clip_idx} 분석 완료")
+        score = parsed.get("score", "?")
+        summary = f"스윙 점수: {score}/100"
     except Exception:
-        summary = f"스윙 {clip_idx} 분석 완료"
+        summary = "스윙 분석 완료"
 
     return CoachingResult(coaching=text, summary=summary)

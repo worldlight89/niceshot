@@ -25,7 +25,7 @@
       <h2 class="question">스윙 연습을<br>시작하시겠습니까?</h2>
       <div class="info-box">
         <p class="info-row">📱 폰을 세워두고 혼자서도 사용 가능</p>
-        <p class="info-row">🤖 AI가 7구간 스윙 자세를 분석해 드립니다</p>
+        <p class="info-row">🤖 AI가 영상으로 스윙을 분석해 드립니다</p>
         <p class="info-row">🎤 음성 명령 지원 ("시작", "다시")</p>
       </div>
     </div>
@@ -60,7 +60,7 @@
       <div class="info-box">
         <p class="info-row">📱 폰을 1.5~2m 앞에 세운 후 연습 시작을 눌러주세요</p>
         <p class="info-row">🧍 전신이 화면에 들어오면 자동으로 시작됩니다</p>
-        <p class="info-row">🎤 "시작" 말하면 즉시 시작, "다시" 말하면 재녹화</p>
+        <p class="info-row">⏱ 4초 녹화 → AI가 스윙 점수와 교정 포인트를 알려드립니다</p>
       </div>
     </div>
     <button class="btn btn-primary" onclick="startPractice()">📹 연습 시작</button>
@@ -117,11 +117,41 @@
     <button class="btn btn-outline" onclick="practiceAgain()">🔄 한 번 더 연습 후 분석</button>
   </div>
 
-  <!-- Step 9: 결과 -->
+  <!-- Step 9: 스코어카드 결과 -->
   <div id="step9" class="step step-results">
     <h2 class="question-top">AI 코칭 결과</h2>
-    <div id="resultsWrap" class="results-wrap"></div>
+    <div id="scoreCardWrap" class="scorecard-wrap"></div>
+    <button class="btn btn-primary" onclick="showSlowmoPlayer()">🎬 교정 영상 보기</button>
     <button class="btn btn-secondary" onclick="resetAll()">처음부터 다시하기</button>
+  </div>
+
+  <!-- Step 10: 슬로모션 교정 영상 -->
+  <div id="step10" class="step step-slowmo">
+    <div class="slowmo-top">
+      <button class="slowmo-back" onclick="goStep(9)">← 스코어</button>
+      <span class="slowmo-title">교정 영상</span>
+    </div>
+    <div class="slowmo-video-wrap">
+      <video id="slowmoVideo" playsinline muted></video>
+      <canvas id="slowmoCanvas"></canvas>
+    </div>
+    <div class="slowmo-controls">
+      <button class="slowmo-play-btn" id="slowmoPlayBtn" onclick="toggleSlowmo()">▶</button>
+      <div class="slowmo-timeline">
+        <div class="timeline-bg"></div>
+        <div class="timeline-progress" id="timelineProgress"></div>
+      </div>
+      <span class="slowmo-speed">0.25x</span>
+    </div>
+    <div class="slowmo-info">
+      <div class="slowmo-phase" id="slowmoPhaseLabel">—</div>
+      <div class="slowmo-comment-text" id="slowmoComment"></div>
+    </div>
+    <div class="slowmo-legend">
+      <span class="legend-item"><span class="legend-dot red"></span>현재 자세</span>
+      <span class="legend-item"><span class="legend-dot green"></span>교정 자세</span>
+    </div>
+    <button class="btn btn-secondary" onclick="resetAll()" style="margin:0 24px 24px">처음부터 다시하기</button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
