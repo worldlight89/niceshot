@@ -121,6 +121,7 @@ def _check_cross_phase(rule: dict, metrics: dict) -> dict | None:
                 "deduction": tier["deduction"],
                 "severity": tier["severity"],
                 "label_ko": rule["label_ko"],
+                "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
                 "description": (
                     f"{rule['metric']} 어드레스 {val_a}° → "
                     f"{rule['phase_b']} {val_b}° (차이 {round(diff)}°)"
@@ -149,6 +150,7 @@ def _check_below_threshold(rule: dict, metrics: dict) -> dict | None:
                 "deduction": tier["deduction"],
                 "severity": tier["severity"],
                 "label_ko": rule["label_ko"],
+                "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
                 "description": f"{rule['metric']} {val}° (기준 {ideal}°)",
             }
     return None
@@ -170,6 +172,7 @@ def _check_equals(rule: dict, metrics: dict) -> dict | None:
             "deduction": rule["deduction"],
             "severity": rule["severity"],
             "label_ko": rule["label_ko"],
+            "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
             "description": rule["label_ko"],
         }
     return None
@@ -195,6 +198,7 @@ def _check_out_of_range(rule: dict, metrics: dict) -> dict | None:
             "deduction": rule["deduction"],
             "severity": rule["severity"],
             "label_ko": rule["label_ko"],
+            "friendly_ko": rule.get("friendly_ko", rule["label_ko"]),
             "description": f"{rule['metric']} {val}° (정상범위 {lo}~{hi}°)",
         }
     return None
@@ -210,7 +214,8 @@ def _build_problems(faults: list[dict]) -> list[dict]:
         problems.append({
             "phase": f["phase"],
             "joint": f["joint"],
-            "description": f"{f['label_ko']} — {f['description']}",
+            "description": f.get("friendly_ko", f["label_ko"]),
+            "detail": f["description"],
         })
     return problems
 
@@ -238,7 +243,7 @@ def _build_corrections(
             "joint_idx": fault["joint_idx"],
             "joint": fault["joint"],
             "severity": fault["severity"],
-            "label": fault["label_ko"],
+            "label": fault.get("friendly_ko", fault["label_ko"]),
         }
 
         if joint_map and "target" in fault:

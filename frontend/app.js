@@ -611,25 +611,42 @@ var PHASE_RANGES = [
   { key: 'finish',        label: '피니시',      start: 3.2,  end: 4.0 }
 ];
 
+var slowmoPauseTime = -1;
+var slowmoPaused = false;
+var slowmoPauseDone = false;
+
 function showSlowmoPlayer() {
   goStep(10);
   var video = document.getElementById('slowmoVideo');
-  var canvas = document.getElementById('slowmoCanvas');
-  if (!video || !canvas || !state.videoBlob) return;
+  if (!video || !state.videoBlob) return;
 
   video.src = URL.createObjectURL(state.videoBlob);
   video.playbackRate = 0.25;
   video.muted = true;
 
+  slowmoPauseTime = findWorstPauseTime();
+  slowmoPaused = false;
+  slowmoPauseDone = false;
+
+  var marker = document.getElementById('timelineMarker');
+  if (marker && slowmoPauseTime > 0) {
+    marker.style.display = 'block';
+  }
+
   video.onloadedmetadata = function () {
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 360;
+    var cU = document.getElementById('canvasUser');
+    var cP = document.getElementById('canvasPro');
+    var h = 720; var w = 400;
+    if (cU) { cU.width = w; cU.height = h; }
+    if (cP) { cP.width = w; cP.height = h; }
     video.play();
     startSlowmoOverlay();
   };
   video.onplay = function () {
     var btn = document.getElementById('slowmoPlayBtn');
     if (btn) btn.textContent = '⏸';
+    var badge = document.getElementById('pauseBadge');
+    if (badge) badge.style.display = 'none';
     startSlowmoOverlay();
   };
   video.onpause = function () {
@@ -647,7 +664,15 @@ function toggleSlowmo() {
   var video = document.getElementById('slowmoVideo');
   if (!video) return;
   if (video.paused || video.ended) {
-    if (video.ended) video.currentTime = 0;
+    if (video.ended) {
+      video.currentTime = 0;
+      slowmoPauseDone = false;
+      slowmoPaused = false;
+    }
+    if (slowmoPaused) {
+      slowmoPaused = false;
+      slowmoPauseDone = true;
+    }
     video.play();
   } else {
     video.pause();
@@ -697,141 +722,211 @@ function computeAngleCorrection(lms, corr, w, h) {
   };
 }
 
+function findWorstPauseTime() {
+  if (!state.analysisResult || !state.analysisResult.corrections) return -1;
+  var corr = state.analysisResult.corrections;
+  var worstPhase = null;
+  var worstScore = 0;
+  for (var i = 0; i < PHASE_RANGES.length; i++) {
+    var pk = PHASE_RANGES[i].key;
+    var pc = corr[pk];
+    if (!pc || pc.length === 0) continue;
+    var score = 0;
+    for (var j = 0; j < pc.length; j++) {
+      score += (pc[j].severity === 'fault') ? 3 : 1;
+    }
+    if (score > worstScore) { worstScore = score; worstPhase = PHASE_RANGES[i]; }
+  }
+  if (!worstPhase) return -1;
+  return (worstPhase.start + worstPhase.end) / 2;
+}
+
+function buildCorrectedLandmarks(lms, phaseCorr) {
+  var corrected = [];
+  for (var i = 0; i < lms.length; i++) {
+    corrected.push({ x: lms[i].x, y: lms[i].y, visibility: lms[i].visibility });
+  }
+  for (var ci = 0; ci < phaseCorr.length; ci++) {
+    var corr = phaseCorr[ci];
+    if (corr.type !== 'angle' || corr.vertex_idx === undefined) continue;
+    var vertex = lms[corr.vertex_idx];
+    var endpoint = lms[corr.endpoint_idx];
+    if (!vertex || !endpoint) continue;
+    if (vertex.visibility < 0.25 || endpoint.visibility < 0.25) continue;
+
+    var diffDeg = corr.target_deg - corr.current_deg;
+    var vex = endpoint.x - vertex.x;
+    var vey = endpoint.y - vertex.y;
+    var anchor = lms[corr.anchor_idx];
+    if (!anchor) continue;
+    var vax = anchor.x - vertex.x;
+    var vay = anchor.y - vertex.y;
+    var cross = vax * vey - vay * vex;
+    var sign = cross >= 0 ? 1 : -1;
+    var rad = diffDeg * sign * Math.PI / 180;
+    var cosR = Math.cos(rad);
+    var sinR = Math.sin(rad);
+
+    corrected[corr.endpoint_idx] = {
+      x: vertex.x + vex * cosR - vey * sinR,
+      y: vertex.y + vex * sinR + vey * cosR,
+      visibility: endpoint.visibility
+    };
+  }
+  return corrected;
+}
+
+function drawSkeleton(ctx, lms, w, h, opts) {
+  var dotColor = opts.dotColor || 'rgba(255,255,255,0.7)';
+  var lineColor = opts.lineColor || 'rgba(255,255,255,0.5)';
+  var highlightJoints = opts.highlightJoints || {};
+  var highlightColor = opts.highlightColor || '#FF4444';
+
+  ctx.lineWidth = Math.max(2, w * 0.008);
+  for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
+    var conn = POSE_CONNECTIONS[ci];
+    var a = lms[conn[0]], b = lms[conn[1]];
+    if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x * w, a.y * h);
+    ctx.lineTo(b.x * w, b.y * h);
+    var isProblem = (conn[0] in highlightJoints) || (conn[1] in highlightJoints);
+    ctx.strokeStyle = isProblem ? highlightColor : lineColor;
+    ctx.stroke();
+  }
+
+  var DOT_R = Math.max(4, w * 0.015);
+  for (var li = 0; li < lms.length; li++) {
+    var lm = lms[li];
+    if (!lm || lm.visibility < 0.25) continue;
+    var jx = lm.x * w, jy = lm.y * h;
+    var isHL = li in highlightJoints;
+    ctx.beginPath();
+    ctx.arc(jx, jy, isHL ? DOT_R * 1.4 : DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = isHL ? highlightColor : dotColor;
+    ctx.fill();
+  }
+}
+
 function startSlowmoOverlay() {
   var video = document.getElementById('slowmoVideo');
-  var canvas = document.getElementById('slowmoCanvas');
-  if (!video || !canvas) return;
-  var ctx = canvas.getContext('2d');
+  var canvasUser = document.getElementById('canvasUser');
+  var canvasPro = document.getElementById('canvasPro');
+  if (!video || !canvasUser || !canvasPro) return;
+  var ctxU = canvasUser.getContext('2d');
+  var ctxP = canvasPro.getContext('2d');
 
   function drawFrame() {
     if (video.paused || video.ended) { slowmoAnimId = null; return; }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     var t = video.currentTime;
     var phase = getCurrentPhase(t);
     var poseFrame = findClosestPoseFrame(t);
 
-    /* UI 업데이트 */
-    var phaseLabel = document.getElementById('slowmoPhaseLabel');
-    if (phaseLabel) phaseLabel.textContent = phase.label;
-
-    var comment = '';
-    if (state.analysisResult && state.analysisResult.phase_comments) {
-      comment = state.analysisResult.phase_comments[phase.key] || '';
-    }
-    var commentEl = document.getElementById('slowmoComment');
-    if (commentEl) commentEl.textContent = comment;
-
-    var progress = document.getElementById('timelineProgress');
-    if (progress && video.duration) {
-      progress.style.width = (t / video.duration * 100) + '%';
-    }
-
-    /* 스켈레톤 오버레이 */
-    if (poseFrame && poseFrame.landmarks) {
-      var w = canvas.width, h = canvas.height;
-      var lms = poseFrame.landmarks;
-
-      /* 현재 구간의 교정 데이터 (규칙 엔진 기반) */
-      var phaseCorr = [];
-      if (state.analysisResult && state.analysisResult.corrections) {
-        phaseCorr = state.analysisResult.corrections[phase.key] || [];
-      }
-
-      var corrJoints = {};
-      for (var ci2 = 0; ci2 < phaseCorr.length; ci2++) {
-        var c = phaseCorr[ci2];
-        corrJoints[c.joint_idx] = c;
-        if (c.vertex_idx !== undefined) corrJoints[c.vertex_idx] = c;
-        if (c.endpoint_idx !== undefined) corrJoints[c.endpoint_idx] = c;
-      }
-      var hasCorr = phaseCorr.length > 0;
-
-      /* 스켈레톤 선 */
-      ctx.lineWidth = Math.max(2, w * 0.005);
-      for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
-        var conn = POSE_CONNECTIONS[ci];
-        var a = lms[conn[0]], b = lms[conn[1]];
-        if (!a || !b || a.visibility < 0.3 || b.visibility < 0.3) continue;
-        ctx.beginPath();
-        ctx.moveTo(a.x * w, a.y * h);
-        ctx.lineTo(b.x * w, b.y * h);
-        var connProblem = (conn[0] in corrJoints) || (conn[1] in corrJoints);
-        ctx.strokeStyle = connProblem ? 'rgba(255,80,80,0.85)' : 'rgba(255,255,255,0.5)';
-        ctx.stroke();
-      }
-
-      /* 관절 점 */
-      var DOT_R = Math.max(4, w * 0.01);
-      for (var li = 0; li < lms.length; li++) {
-        var lm = lms[li];
-        if (!lm || lm.visibility < 0.25) continue;
-        var jx = lm.x * w, jy = lm.y * h;
-        var isCorr = li in corrJoints;
-
-        ctx.beginPath();
-        ctx.arc(jx, jy, isCorr ? DOT_R * 1.5 : DOT_R, 0, Math.PI * 2);
-        ctx.fillStyle = isCorr ? '#FF4444' : 'rgba(255,255,255,0.7)';
-        ctx.fill();
-      }
-
-      /* 교정 포인트 (초록 위치) */
-      for (var ci3 = 0; ci3 < phaseCorr.length; ci3++) {
-        var corr = phaseCorr[ci3];
-        var jLm = lms[corr.joint_idx];
-        if (!jLm || jLm.visibility < 0.25) continue;
-        var rx = jLm.x * w, ry = jLm.y * h;
-
-        /* 빨간 강조 링 */
-        ctx.beginPath();
-        ctx.arc(rx, ry, DOT_R * 3, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,68,68,0.5)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        /* 초록 교정 위치 */
-        var greenPos = null;
-        if (corr.type === 'angle' && corr.vertex_idx !== undefined) {
-          greenPos = computeAngleCorrection(lms, corr, w, h);
+    /* auto-pause at worst phase */
+    if (!slowmoPauseDone && slowmoPauseTime > 0 && t >= slowmoPauseTime && !slowmoPaused) {
+      slowmoPaused = true;
+      video.pause();
+      var badge = document.getElementById('pauseBadge');
+      var pauseText = document.getElementById('pauseText');
+      if (badge) badge.style.display = 'flex';
+      if (pauseText) {
+        var phaseCorr2 = [];
+        if (state.analysisResult && state.analysisResult.corrections) {
+          phaseCorr2 = state.analysisResult.corrections[phase.key] || [];
         }
-
-        if (greenPos) {
-          var epLm = lms[corr.endpoint_idx];
-          var epX = epLm ? epLm.x * w : rx;
-          var epY = epLm ? epLm.y * h : ry;
-
-          ctx.save();
-          ctx.setLineDash([6, 4]);
-          ctx.beginPath();
-          ctx.moveTo(epX, epY);
-          ctx.lineTo(greenPos.x, greenPos.y);
-          ctx.strokeStyle = '#44FF88';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.restore();
-
-          ctx.beginPath();
-          ctx.arc(greenPos.x, greenPos.y, DOT_R * 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#44FF88';
-          ctx.fill();
-        }
+        var desc = phaseCorr2.length > 0 ? (phaseCorr2[0].label || '교정 포인트') : '교정 포인트';
+        pauseText.textContent = desc + ' — 좌우를 비교해 보세요';
       }
-
-      /* 문제 구간 배지 */
-      if (hasCorr) {
-        ctx.fillStyle = 'rgba(255,68,68,0.85)';
-        ctx.font = 'bold ' + Math.max(14, w * 0.03) + 'px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('⚠ 교정 필요', 12, Math.max(20, h * 0.06));
-      }
+      setTimeout(function () {
+        slowmoPaused = false;
+        slowmoPauseDone = true;
+        if (badge) badge.style.display = 'none';
+        video.play();
+      }, 2500);
+      drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video);
+      slowmoAnimId = null;
+      return;
     }
 
+    drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video);
     slowmoAnimId = requestAnimationFrame(drawFrame);
   }
 
   if (slowmoAnimId) cancelAnimationFrame(slowmoAnimId);
   slowmoAnimId = requestAnimationFrame(drawFrame);
+}
+
+function drawBothCanvases(ctxU, ctxP, canvasUser, canvasPro, poseFrame, phase, t, video) {
+  var wU = canvasUser.width, hU = canvasUser.height;
+  var wP = canvasPro.width, hP = canvasPro.height;
+
+  ctxU.fillStyle = '#0a0a0a';
+  ctxU.fillRect(0, 0, wU, hU);
+  ctxP.fillStyle = '#0a0a0a';
+  ctxP.fillRect(0, 0, wP, hP);
+
+  /* UI 업데이트 */
+  var phaseLabel = document.getElementById('slowmoPhaseLabel');
+  if (phaseLabel) phaseLabel.textContent = phase.label;
+
+  var comment = '';
+  if (state.analysisResult && state.analysisResult.phase_comments) {
+    comment = state.analysisResult.phase_comments[phase.key] || '';
+  }
+  var commentEl = document.getElementById('slowmoComment');
+  if (commentEl) commentEl.textContent = comment;
+
+  var progress = document.getElementById('timelineProgress');
+  if (progress && video.duration) {
+    progress.style.width = (t / video.duration * 100) + '%';
+  }
+
+  var marker = document.getElementById('timelineMarker');
+  if (marker && slowmoPauseTime > 0 && video.duration) {
+    marker.style.left = (slowmoPauseTime / video.duration * 100) + '%';
+  }
+
+  if (!poseFrame || !poseFrame.landmarks) return;
+  var lms = poseFrame.landmarks;
+
+  var phaseCorr = [];
+  if (state.analysisResult && state.analysisResult.corrections) {
+    phaseCorr = state.analysisResult.corrections[phase.key] || [];
+  }
+
+  var corrJoints = {};
+  for (var ci2 = 0; ci2 < phaseCorr.length; ci2++) {
+    var c = phaseCorr[ci2];
+    corrJoints[c.joint_idx] = c;
+    if (c.vertex_idx !== undefined) corrJoints[c.vertex_idx] = c;
+    if (c.endpoint_idx !== undefined) corrJoints[c.endpoint_idx] = c;
+  }
+
+  /* 왼쪽: 사용자 스켈레톤 */
+  drawSkeleton(ctxU, lms, wU, hU, {
+    dotColor: 'rgba(255,120,120,0.8)',
+    lineColor: 'rgba(255,100,100,0.5)',
+    highlightJoints: corrJoints,
+    highlightColor: '#FF4444'
+  });
+
+  /* 오른쪽: 교정된 정석 스켈레톤 */
+  var correctedLms = buildCorrectedLandmarks(lms, phaseCorr);
+  drawSkeleton(ctxP, correctedLms, wP, hP, {
+    dotColor: 'rgba(120,255,160,0.8)',
+    lineColor: 'rgba(100,255,140,0.5)',
+    highlightJoints: corrJoints,
+    highlightColor: '#44FF88'
+  });
+
+  /* 문제 구간 배지 (사용자 캔버스) */
+  if (phaseCorr.length > 0) {
+    ctxU.fillStyle = 'rgba(255,68,68,0.85)';
+    ctxU.font = 'bold ' + Math.max(12, wU * 0.035) + 'px sans-serif';
+    ctxU.textAlign = 'left';
+    ctxU.fillText('⚠ 교정 필요', 8, hU - 12);
+  }
 }
 
 /* ================================================================
@@ -846,6 +941,7 @@ function resetAll() {
   poseRunning = false; okFrames = 0;
   setupDone = false; betweenState = 'idle'; noPersonFrames = 0;
   if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
+  slowmoPaused = false; slowmoPauseDone = false; slowmoPauseTime = -1;
   var slowVid = document.getElementById('slowmoVideo');
   if (slowVid) { slowVid.pause(); slowVid.removeAttribute('src'); slowVid.load(); }
   if (mediaStream) { mediaStream.getTracks().forEach(function (t) { t.stop(); }); mediaStream = null; }

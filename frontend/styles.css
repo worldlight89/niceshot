@@ -616,7 +616,7 @@ html, body {
 }
 
 /* ================================================================
-   슬로모션 교정 영상 (step 10)
+   슬로모션 비교 영상 (step 10)
    ================================================================ */
 .step-slowmo {
   padding: 0;
@@ -652,30 +652,79 @@ html, body {
   font-weight: 700;
 }
 
-/* 비디오 + 캔버스 컨테이너 */
-.slowmo-video-wrap {
-  position: relative;
-  width: 100%;
+/* ── 좌우 분할 컨테이너 ── */
+.split-container {
+  display: flex;
   flex: 1;
   min-height: 0;
   background: #000;
+  position: relative;
 }
 
-.slowmo-video-wrap video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.split-panel {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
 }
 
-.slowmo-video-wrap canvas {
-  position: absolute;
-  inset: 0;
+.split-canvas {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  display: block;
+}
+
+.split-divider {
+  width: 2px;
+  background: rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+.split-label {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  z-index: 2;
   pointer-events: none;
+  white-space: nowrap;
+}
+
+.split-label-user {
+  background: rgba(255,68,68,0.75);
+  color: #fff;
+}
+
+.split-label-pro {
+  background: rgba(68,255,136,0.75);
+  color: #111;
+}
+
+/* 일시정지 배지 */
+.pause-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(231,76,60,0.9);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  animation: pause-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pause-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.pause-icon {
+  font-size: 1rem;
 }
 
 /* 컨트롤 바 */
@@ -713,7 +762,7 @@ html, body {
   background: rgba(255,255,255,0.15);
   border-radius: 3px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .timeline-progress {
@@ -725,6 +774,16 @@ html, body {
   border-radius: 3px;
   width: 0;
   transition: width 0.1s linear;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: -5px;
+  width: 3px;
+  height: 16px;
+  background: #e74c3c;
+  border-radius: 2px;
+  transform: translateX(-50%);
 }
 
 .slowmo-speed {
