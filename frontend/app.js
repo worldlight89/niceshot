@@ -36,6 +36,12 @@ var setupDone = false;
 var betweenState = 'idle';
 var noPersonFrames = 0;
 
+/* ── 자동 줌 ── */
+var autoZoomScale = 1;
+var autoZoomX = 50;
+var autoZoomY = 50;
+var zoomFrameCount = 0;
+
 /* ── 슬로모션 ── */
 var slowmoAnimId = null;
 
@@ -164,6 +170,9 @@ function onPoseResult(results) {
   var lms = results.poseLandmarks;
   var hasBody = lms && lms.length > 0;
 
+  /* 자동 줌 (세팅 + 녹화 모두) */
+  if (hasBody) updateAutoZoom(lms);
+
   /* 녹화 중: 랜드마크 저장 */
   if (state.isRecording && hasBody) {
     state.poseFrames.push({
@@ -219,13 +228,73 @@ function isFullBodyInFrame(lms) {
     Math.min.apply(null, ys) > 0.02 && Math.max.apply(null, ys) < 0.97;
 }
 
+/* ── 자동 줌 ── */
+function updateAutoZoom(lms) {
+  zoomFrameCount++;
+  if (zoomFrameCount % 3 !== 0) return;
+
+  var visibleLms = [];
+  for (var i = 0; i < lms.length; i++) {
+    if (lms[i] && (lms[i].visibility || 0) > 0.3) visibleLms.push(lms[i]);
+  }
+  if (visibleLms.length < 10) return;
+
+  var minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (var j = 0; j < visibleLms.length; j++) {
+    if (visibleLms[j].x < minX) minX = visibleLms[j].x;
+    if (visibleLms[j].x > maxX) maxX = visibleLms[j].x;
+    if (visibleLms[j].y < minY) minY = visibleLms[j].y;
+    if (visibleLms[j].y > maxY) maxY = visibleLms[j].y;
+  }
+
+  var bodyW = maxX - minX;
+  var bodyH = maxY - minY;
+  if (bodyW < 0.05 || bodyH < 0.05) return;
+
+  var targetFill = 0.75;
+  var scaleX = targetFill / bodyW;
+  var scaleY = targetFill / bodyH;
+  var newScale = Math.min(scaleX, scaleY);
+  newScale = Math.max(1.0, Math.min(2.5, newScale));
+
+  var centerX = (minX + maxX) / 2 * 100;
+  var centerY = (minY + maxY) / 2 * 100;
+
+  var smooth = 0.3;
+  autoZoomScale += (newScale - autoZoomScale) * smooth;
+  autoZoomX += (centerX - autoZoomX) * smooth;
+  autoZoomY += (centerY - autoZoomY) * smooth;
+
+  var vid = getActiveVideo();
+  if (vid) {
+    vid.style.transformOrigin = autoZoomX.toFixed(1) + '% ' + autoZoomY.toFixed(1) + '%';
+    vid.style.transform = 'scale(' + autoZoomScale.toFixed(3) + ')';
+  }
+}
+
+function resetAutoZoom() {
+  autoZoomScale = 1;
+  autoZoomX = 50;
+  autoZoomY = 50;
+  zoomFrameCount = 0;
+  var preview = document.getElementById('previewVideo');
+  var record = document.getElementById('recordVideo');
+  if (preview) { preview.style.transform = ''; preview.style.transformOrigin = ''; }
+  if (record) { record.style.transform = ''; record.style.transformOrigin = ''; }
+}
+
 /* ================================================================
    녹화 흐름
    ================================================================ */
 function kickoffFirstSwing() {
   goStep(7);
   var recVid = document.getElementById('recordVideo');
-  if (recVid && mediaStream) { recVid.srcObject = mediaStream; recVid.play(); }
+  if (recVid && mediaStream) {
+    recVid.srcObject = mediaStream;
+    recVid.play();
+    recVid.style.transformOrigin = autoZoomX.toFixed(1) + '% ' + autoZoomY.toFixed(1) + '%';
+    recVid.style.transform = 'scale(' + autoZoomScale.toFixed(3) + ')';
+  }
   startVoiceRecognition();
   startNextSwingCountdown();
 }
@@ -903,6 +972,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, highlightJoints)
    ================================================================ */
 function resetAll() {
   stopVoiceRecognition();
+  resetAutoZoom();
   state.club = null; state.concern = '';
   state.videoBlob = null; state.poseFrames = [];
   state.analysisResult = null;
