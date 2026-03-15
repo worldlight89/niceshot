@@ -58,7 +58,7 @@ def _call_gemini(prompt_text: str) -> str | None:
             "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
         }
 
-        r = req.post(url, headers=headers, json=body, timeout=30)
+        r = req.post(url, headers=headers, json=body, timeout=60)
 
         if r.status_code == 200:
             rj = r.json()
@@ -76,81 +76,44 @@ def _call_gemini(prompt_text: str) -> str | None:
 
 
 def _build_prompt(club: str, notes: str, metrics: dict, rule_result: dict) -> str:
-    metrics_txt = ""
-    for phase in ["address", "takeaway", "backswing", "downswing",
-                   "impact", "followthrough", "finish"]:
+    # 핵심 수치만 추려서 전달 (프롬프트 길이 최소화)
+    key_metrics = {}
+    important_keys = ['척추기울기_deg', '어깨기울기_deg', '힙기울기_deg', '왼팔각도_deg', '오른팔각도_deg',
+                      '왼무릎굴곡_deg', '오른무릎굴곡_deg', '오른손목_높이_pct', '어깨_힙_회전차_deg']
+    for phase in ["address", "takeaway", "backswing", "downswing", "impact", "followthrough", "finish"]:
         m = metrics.get(phase, {})
         if m:
-            metrics_txt += f"  {phase}: {json.dumps(m, ensure_ascii=False)}\n"
+            slim = {k: v for k, v in m.items() if k in important_keys}
+            if slim:
+                key_metrics[phase] = slim
 
-    swing_ind = metrics.get("swing_indicators", {})
-    swing_txt = json.dumps(swing_ind, ensure_ascii=False) if swing_ind else "없음"
+    metrics_txt = json.dumps(key_metrics, ensure_ascii=False)
 
-    # 엔진이 프로 기준과 비교해서 발견한 문제들
-    faults = rule_result.get("faults", [])
+    # 엔진이 감지한 문제 (최대 5개만)
+    faults = rule_result.get("faults", [])[:5]
     faults_txt = ""
     for f in faults:
-        faults_txt += (
-            f"  - [{f['phase']}] {f.get('friendly_ko', f['label_ko'])} "
-            f"(감점 {f['deduction']}점)\n"
-        )
-    faults_txt = faults_txt or "  - 엔진 감지 문제 없음\n"
+        faults_txt += f"  [{f['phase']}] {f.get('friendly_ko', f['label_ko'])} (감점{f['deduction']})\n"
+    faults_txt = faults_txt or "  없음\n"
 
-    concern = f"\n골퍼의 고민: {notes}" if notes else ""
+    concern = f"\n고민: {notes}" if notes else ""
 
-    return f"""당신은 PGA 투어 경력 20년의 프로 골프 코치입니다.
-아래 MediaPipe 센서 데이터와 규칙 엔진 분석 결과를 보고 골프 스윙을 코칭해주세요.
+    return f"""PGA 프로 골프 코치입니다. 아래 데이터로 스윙을 분석해주세요.
 
 클럽: {club or '미지정'}{concern}
 
-[스윙 전체 지표 (MediaPipe)]
-{swing_txt}
-
-[규칙 엔진 — 프로 기준과 비교한 문제점]
-(엔진이 29개 규칙으로 측정값을 프로 기준각과 비교한 결과입니다)
+[엔진 감지 문제]
 {faults_txt}
-[7단계별 MediaPipe 원시 측정값]
-(단위: 각도=°, 높이=화면비율 0~100%)
+[단계별 측정값(각도°, 높이%)]
 {metrics_txt}
-[관절 인덱스 참고]
-0=머리, 11=왼어깨, 12=오른어깨, 13=왼팔꿈치, 14=오른팔꿈치,
-15=왼손목, 16=오른손목, 23=왼엉덩이, 24=오른엉덩이,
-25=왼무릎, 26=오른무릎, 27=왼발목, 28=오른발목
 
-[지시사항]
-1. 엔진이 감지한 문제점을 참고하되, 당신의 코치 판단으로 최종 평가하세요
-2. 각 단계별 문제점을 최대 3개 분석하세요
-3. 각 문제에 해당하는 관절 인덱스(joints)를 포함하세요
-4. 문제 설명은 한국어, 초보자도 이해하기 쉽게 (2문장 이내)
-5. 문제가 없는 단계는 problems를 빈 배열로
-6. 각 단계별 점수도 0~100으로 매겨주세요 (문제 없으면 90~100, 문제 1개면 60~80, 2개 이상이면 40~60, 심각하면 20~40)
-7. 전체 스윙을 종합 평가한 점수(0~100)를 직접 매기세요 (7단계 점수의 평균과 근접하게)
-8. 가장 중요한 교정 드릴 1개를 추천하세요
-9. 측정 수치를 근거로 사용하세요
+[관절인덱스] 0=머리,11=왼어깨,12=오른어깨,13=왼팔꿈치,14=오른팔꿈치,15=왼손목,16=오른손목,23=왼엉덩이,24=오른엉덩이,25=왼무릎,26=오른무릎
 
-⚠️ 반드시 아래 JSON 형식만 출력. JSON 외 텍스트 절대 금지.
+지시: 각 단계별 점수(0-100)와 문제점(최대2개), 전체점수, 드릴1개를 JSON으로만 출력.
+점수기준: 문제없음=85-100, 문제1개=55-75, 문제2개=35-55
 
-{{
-  "score": 75,
-  "phases": {{
-    "address": {{"score": 80, "status": "good", "problems": []}},
-    "takeaway": {{
-      "score": 55,
-      "status": "warning",
-      "problems": [{{"description": "문제 설명. 교정 방법.", "joints": [13, 15]}}]
-    }},
-    "backswing": {{"score": 40, "status": "bad", "problems": [{{"description": "...", "joints": [11]}}]}},
-    "downswing": {{"score": 85, "status": "good", "problems": []}},
-    "impact": {{"score": 90, "status": "good", "problems": []}},
-    "followthrough": {{"score": 75, "status": "good", "problems": []}},
-    "finish": {{"score": 70, "status": "good", "problems": []}}
-  }},
-  "drill": {{
-    "name": "드릴 이름",
-    "method": "드릴 방법 (2~3문장)",
-    "reps": "횟수/시간"
-  }}
-}}"""
+⚠️JSON만 출력. 다른 텍스트 금지.
+{{"score":75,"phases":{{"address":{{"score":80,"status":"good","problems":[]}},"takeaway":{{"score":55,"status":"warning","problems":[{{"description":"설명.교정법","joints":[13]}}]}},"backswing":{{"score":40,"status":"bad","problems":[{{"description":"설명","joints":[11]}}]}},"downswing":{{"score":85,"status":"good","problems":[]}},"impact":{{"score":90,"status":"good","problems":[]}},"followthrough":{{"score":75,"status":"good","problems":[]}},"finish":{{"score":70,"status":"good","problems":[]}}}},"drill":{{"name":"드릴명","method":"방법(2문장)","reps":"횟수"}}}}"""
 
 
 def _fallback_error(rule_result: dict | None = None) -> CoachingResult:
