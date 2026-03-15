@@ -110,53 +110,61 @@ function buildPhaseStops() {
   var ranges = getPhaseRanges();
   var pauseTimes = detectedPhases ? detectedPhases.pauseAt : null;
 
-  var phaseGrades = (state.analysisResult && state.analysisResult.phase_grades) || {};
-  var corrections = (state.analysisResult && state.analysisResult.corrections) || {};
+  var phaseCoaching = (state.analysisResult && state.analysisResult.phase_coaching) || {};
   var faults = (state.analysisResult && state.analysisResult.faults) || [];
+  var hasGemini = Object.keys(phaseCoaching).length > 0;
 
-  console.log('[buildPhaseStops] faults:', faults.length, 'phaseGrades:', Object.keys(phaseGrades));
-
-  var phaseFaultMap = {};
-  for (var i = 0; i < faults.length; i++) {
-    var f = faults[i];
-    var pk = f.phase;
-    if (!phaseFaultMap[pk]) phaseFaultMap[pk] = [];
-    phaseFaultMap[pk].push(f);
-  }
-  for (var pk in phaseFaultMap) {
-    phaseFaultMap[pk].sort(function (a, b) { return b.deduction - a.deduction; });
-  }
+  console.log('[buildPhaseStops] gemini:', hasGemini,
+    'phases:', Object.keys(phaseCoaching),
+    'faults_fallback:', faults.length);
 
   for (var r = 0; r < ranges.length; r++) {
     var range = ranges[r];
     var phaseKey = range.key;
     var pauseTime = pauseTimes ? pauseTimes[r] : (range.start + range.end) / 2;
-
-    var grade = phaseGrades[phaseKey] || 'good';
-    var phaseFaults = (phaseFaultMap[phaseKey] || []).slice(0, 3);
-
     var issues = [];
-    var pc = corrections[phaseKey] || [];
 
-    for (var fi = 0; fi < phaseFaults.length; fi++) {
-      var fault = phaseFaults[fi];
-      var jointIdx = fault.joint_idx;
-      var joints = {};
-      joints[jointIdx] = true;
-      for (var ci = 0; ci < pc.length; ci++) {
-        if (pc[ci].joint_idx === jointIdx) {
-          if (pc[ci].vertex_idx !== undefined) joints[pc[ci].vertex_idx] = true;
-          if (pc[ci].anchor_idx !== undefined) joints[pc[ci].anchor_idx] = true;
-          if (pc[ci].endpoint_idx !== undefined) joints[pc[ci].endpoint_idx] = true;
+    var coaching = phaseCoaching[phaseKey];
+    if (hasGemini && coaching && coaching.problems && coaching.problems.length > 0) {
+      var probs = coaching.problems.slice(0, 3);
+      for (var pi = 0; pi < probs.length; pi++) {
+        var prob = probs[pi];
+        var joints = {};
+        var mainJoint = 0;
+        if (prob.joints && prob.joints.length > 0) {
+          mainJoint = prob.joints[0];
+          for (var ji = 0; ji < prob.joints.length; ji++) {
+            joints[prob.joints[ji]] = true;
+          }
         }
+        issues.push({
+          color: ISSUE_COLORS[pi],
+          description: prob.description || '',
+          joints: joints,
+          jointIdx: mainJoint
+        });
       }
-      issues.push({
-        color: ISSUE_COLORS[fi],
-        description: fault.friendly_ko || fault.label_ko || '',
-        joints: joints,
-        jointIdx: jointIdx
-      });
+    } else {
+      var phaseFaults = [];
+      for (var fi = 0; fi < faults.length; fi++) {
+        if (faults[fi].phase === phaseKey) phaseFaults.push(faults[fi]);
+      }
+      phaseFaults.sort(function (a, b) { return b.deduction - a.deduction; });
+      phaseFaults = phaseFaults.slice(0, 3);
+      for (var fi = 0; fi < phaseFaults.length; fi++) {
+        var fault = phaseFaults[fi];
+        var fJoints = {};
+        fJoints[fault.joint_idx] = true;
+        issues.push({
+          color: ISSUE_COLORS[fi],
+          description: fault.friendly_ko || fault.label_ko || '',
+          joints: fJoints,
+          jointIdx: fault.joint_idx
+        });
+      }
     }
+
+    var grade = (coaching && coaching.status) || 'good';
 
     stops.push({
       idx: r + 1,

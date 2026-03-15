@@ -33,7 +33,7 @@ if _sa_json:
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from gemini_coach import generate_phase_comments
+from gemini_coach import generate_coaching, CoachingResult
 from rule_engine import analyze_swing
 
 app = FastAPI(title="Golf Swing Coach – NICESHOT")
@@ -148,8 +148,7 @@ async def analyze(
         log.warning("analyze called with no clips")
         return {"error": "No video provided", "coaching": "", "summary": ""}
 
-    video_bytes = await clips[0].read()
-    video_mime = clips[0].content_type or "video/mp4"
+    await clips[0].read()
     for c in clips[1:]:
         await c.read()
 
@@ -174,7 +173,7 @@ async def analyze(
             {
                 "score": -1,
                 "problems": [],
-                "phase_comments": {},
+                "phase_coaching": {},
                 "drill": {},
                 "corrections": {},
                 "reason": rule_result.get(
@@ -186,19 +185,19 @@ async def analyze(
         return {"summary": "스윙 미감지", "coaching": coaching}
 
     try:
-        gemini = generate_phase_comments(
-            video_bytes=video_bytes,
-            video_mime=video_mime,
+        gemini = generate_coaching(
             notes=notes,
             club=club,
             metrics=metrics,
             rule_result=rule_result,
         )
-        log.info("Gemini: %d phase comments", len(gemini.phase_comments))
+        log.info("Gemini coaching: success=%s phases_with_problems=%d",
+                 gemini.success,
+                 sum(1 for v in gemini.phase_coaching.values()
+                     if v.get("problems")))
     except Exception as e:
         log.error("Gemini failed: %s", e)
-        from gemini_coach import CommentsResult
-        gemini = CommentsResult(phase_comments={}, success=False)
+        gemini = CoachingResult(phase_coaching={}, success=False)
 
     coaching = json.dumps(
         {
@@ -206,15 +205,16 @@ async def analyze(
             "problems": rule_result["problems"],
             "faults": rule_result["faults"],
             "phase_grades": rule_result["phase_grades"],
-            "phase_comments": gemini.phase_comments,
-            "drill": rule_result["drill"],
+            "phase_coaching": gemini.phase_coaching,
+            "drill": gemini.overall_drill if gemini.success else rule_result["drill"],
             "corrections": rule_result["corrections"],
         },
         ensure_ascii=False,
     )
 
     elapsed = time.time() - t0
-    log.info("Analyze complete: score=%d elapsed=%.1fs", rule_result["score"], elapsed)
+    log.info("Analyze complete: score=%d gemini=%s elapsed=%.1fs",
+             rule_result["score"], "AI" if gemini.success else "fallback", elapsed)
 
     return {
         "summary": f"스윙 점수: {rule_result['score']}/100",
