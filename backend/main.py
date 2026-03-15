@@ -33,7 +33,7 @@ if _sa_json:
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from gemini_coach import generate_coaching, CoachingResult
+from gemini_coach import generate_coaching, CoachingResult, _fallback_error
 from rule_engine import analyze_swing
 
 app = FastAPI(title="Golf Swing Coach – NICESHOT")
@@ -164,7 +164,7 @@ async def analyze(
         log.info("Gemini: success=%s score=%s", gemini.success, gemini.score)
     except Exception as e:
         log.error("Gemini failed: %s", e)
-        gemini = CoachingResult(success=False)
+        gemini = _fallback_error(rule_result)
 
     # 스윙 미감지
     if gemini.score == -1:

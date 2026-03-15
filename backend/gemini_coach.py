@@ -151,12 +151,37 @@ def _build_prompt(club: str, notes: str, metrics: dict, rule_result: dict) -> st
 }}"""
 
 
-def _fallback_error() -> CoachingResult:
+def _fallback_error(rule_result: dict | None = None) -> CoachingResult:
+    """Gemini 실패 시 규칙 엔진 faults로 최소한의 코칭 제공."""
     phases = ["address", "takeaway", "backswing", "downswing",
                "impact", "followthrough", "finish"]
+    phase_coaching: dict[str, dict] = {p: {"status": "good", "problems": []} for p in phases}
+
+    if rule_result:
+        fault_by_phase: dict[str, list] = {}
+        for f in rule_result.get("faults", []):
+            fault_by_phase.setdefault(f["phase"], []).append(f)
+
+        for p in phases:
+            p_faults = sorted(fault_by_phase.get(p, []),
+                               key=lambda x: x["deduction"], reverse=True)[:3]
+            if p_faults:
+                phase_coaching[p] = {
+                    "status": "bad" if len(p_faults) >= 2 else "warning",
+                    "problems": [
+                        {
+                            "description": f.get("friendly_ko", f["label_ko"]),
+                            "joints": [f["joint_idx"]],
+                        }
+                        for f in p_faults
+                    ],
+                }
+
+    engine_score = rule_result.get("score") if rule_result else None
     return CoachingResult(
-        phase_coaching={p: {"status": "good", "problems": []} for p in phases},
-        score=None,
+        phase_coaching=phase_coaching,
+        overall_drill=rule_result.get("drill", {}) if rule_result else {},
+        score=engine_score,
         success=False,
     )
 
@@ -174,8 +199,8 @@ def generate_coaching(
     text = _call_gemini(prompt)
 
     if not text:
-        log.warning("Gemini returned no text")
-        return _fallback_error()
+        log.warning("Gemini returned no text, using engine fallback")
+        return _fallback_error(rule_result)
 
     text = re.sub(r"```json\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"```\s*", "", text)
@@ -219,4 +244,4 @@ def generate_coaching(
 
     except Exception as e:
         log.warning("Gemini JSON parse failed: %s — raw: %s", e, text[:200])
-        return _fallback_error()
+        return _fallback_error(rule_result)
