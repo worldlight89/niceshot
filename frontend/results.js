@@ -17,8 +17,7 @@ function showScoreCard(data) {
 
   console.log('[ScoreCard] coaching:', coaching ? 'OK' : 'null',
     'score:', coaching && coaching.score,
-    'faults:', coaching && coaching.faults ? coaching.faults.length : 0,
-    'problems:', coaching && coaching.problems ? coaching.problems.length : 0);
+    'phase_coaching keys:', coaching && coaching.phase_coaching ? Object.keys(coaching.phase_coaching) : []);
 
   if (!coaching) {
     wrap.innerHTML = '<div class="result-card"><h3>분석 오류</h3><p>' +
@@ -37,45 +36,66 @@ function showScoreCard(data) {
     return;
   }
 
-  var score = coaching.score || 0;
-  var circumference = 2 * Math.PI * 54;
-  var offset = circumference * (1 - score / 100);
-  var scoreColor = score >= 80 ? '#2d6a4f' : score >= 60 ? '#f39c12' : '#e74c3c';
+  var phaseCoaching = coaching.phase_coaching || {};
+  var phaseOrder = ['address', 'takeaway', 'backswing', 'downswing', 'impact', 'followthrough', 'finish'];
+
+  // 단계별 점수 수집
+  var phaseScores = [];
+  for (var i = 0; i < phaseOrder.length; i++) {
+    var key = phaseOrder[i];
+    var pc = phaseCoaching[key] || {};
+    var ps = typeof pc.score === 'number' ? pc.score : null;
+    // score 없으면 status로 추정
+    if (ps === null) {
+      if (pc.status === 'good') ps = 85;
+      else if (pc.status === 'warning') ps = 60;
+      else if (pc.status === 'bad') ps = 35;
+      else ps = 70;
+    }
+    phaseScores.push(ps);
+  }
+
+  // 평균 점수
+  var avgScore = coaching.score;
+  if (typeof avgScore !== 'number' || avgScore <= 0) {
+    var sum = 0;
+    for (var i = 0; i < phaseScores.length; i++) sum += phaseScores[i];
+    avgScore = Math.round(sum / phaseScores.length);
+  }
+
+  var avgColor = avgScore >= 80 ? '#2d6a4f' : avgScore >= 60 ? '#f39c12' : '#e74c3c';
 
   var html = '';
 
-  html += '<div class="score-circle-wrap">';
-  html += '<svg viewBox="0 0 120 120" class="score-svg">';
-  html += '<circle cx="60" cy="60" r="54" fill="none" stroke="#e8e8e8" stroke-width="8"/>';
-  html += '<circle cx="60" cy="60" r="54" fill="none" stroke="' + scoreColor + '" stroke-width="8" ';
-  html += 'stroke-linecap="round" stroke-dasharray="' + circumference.toFixed(1) + '" ';
-  html += 'stroke-dashoffset="' + circumference.toFixed(1) + '" ';
-  html += 'transform="rotate(-90 60 60)" class="score-ring"/>';
-  html += '</svg>';
-  html += '<div class="score-number">' + score + '</div>';
-  html += '<div class="score-unit">점</div>';
+  // 평균 점수 헤더
+  html += '<div class="avg-score-header" style="text-align:center;padding:16px 0 8px">';
+  html += '<div style="font-size:13px;color:#888;margin-bottom:4px">종합 점수</div>';
+  html += '<div style="font-size:52px;font-weight:900;color:' + avgColor + ';line-height:1">' + avgScore + '</div>';
+  html += '<div style="font-size:14px;color:#888;margin-top:2px">점 / 100점</div>';
   html += '</div>';
 
-  var problems = coaching.problems || [];
-  if (problems.length > 0) {
-    html += '<div class="problems-section">';
-    html += '<h3 class="problems-title">주요 교정 포인트</h3>';
-    for (var i = 0; i < problems.length; i++) {
-      var p = problems[i];
-      html += '<div class="problem-card">';
-      html += '<span class="problem-num">' + (i + 1) + '</span>';
-      html += '<div class="problem-body">';
-      html += '<span class="problem-phase">' + (PHASE_LABELS[p.phase] || p.phase) + '</span>';
-      html += '<p class="problem-desc">' + escapeHtml(p.description || '') + '</p>';
-      html += '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-  } else {
-    html += '<div class="problems-section"><p class="no-problems">교정 포인트 없음 — 훌륭한 스윙입니다!</p></div>';
-  }
+  // 7단계 점수 리스트
+  html += '<div class="phase-score-list" style="margin:12px 0">';
+  for (var i = 0; i < phaseOrder.length; i++) {
+    var key = phaseOrder[i];
+    var label = PHASE_LABELS[key] || key;
+    var ps = phaseScores[i];
+    var barColor = ps >= 80 ? '#2d6a4f' : ps >= 60 ? '#f39c12' : '#e74c3c';
+    var barW = ps + '%';
 
-  if (coaching.drill) {
+    html += '<div class="phase-score-row" style="margin-bottom:10px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">';
+    html += '<span style="font-size:13px;font-weight:600;color:#333">' + label + '</span>';
+    html += '<span style="font-size:14px;font-weight:700;color:' + barColor + '">' + ps + '점</span>';
+    html += '</div>';
+    html += '<div style="background:#eee;border-radius:4px;height:8px;overflow:hidden">';
+    html += '<div style="width:' + barW + ';background:' + barColor + ';height:100%;border-radius:4px;transition:width 0.8s ease-out"></div>';
+    html += '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  if (coaching.drill && (coaching.drill.name || coaching.drill.method)) {
     var d = coaching.drill;
     html += '<div class="drill-card">';
     html += '<div class="drill-title">📋 ' + escapeHtml(d.name || '추천 드릴') + '</div>';
@@ -87,14 +107,6 @@ function showScoreCard(data) {
   html += '<button class="btn btn-outline" onclick="showSlowmoPlayer()" style="margin-top:12px;width:100%">🎬 교정 영상 보기</button>';
 
   wrap.innerHTML = html;
-
-  setTimeout(function () {
-    var ring = wrap.querySelector('.score-ring');
-    if (ring) {
-      ring.style.transition = 'stroke-dashoffset 1.2s ease-out';
-      ring.style.strokeDashoffset = offset.toFixed(1);
-    }
-  }, 100);
 }
 
 /* ================================================================
@@ -514,7 +526,6 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
 
     ctx.font = fontSize + 'px sans-serif';
     var lines = wrapText(ctx, text, maxTextW - padding * 2 - fontSize);
-    if (lines.length > 2) lines = lines.slice(0, 2);
     var cardH = lines.length * lineH + padding;
 
     ctx.fillStyle = 'rgba(0,0,0,0.75)';

@@ -123,25 +123,27 @@ def _build_prompt(club: str, notes: str, metrics: dict, rule_result: dict) -> st
 3. 각 문제에 해당하는 관절 인덱스(joints)를 포함하세요
 4. 문제 설명은 한국어, 초보자도 이해하기 쉽게 (2문장 이내)
 5. 문제가 없는 단계는 problems를 빈 배열로
-6. 전체 스윙을 종합 평가한 점수(0~100)를 직접 매기세요
-7. 가장 중요한 교정 드릴 1개를 추천하세요
-8. 측정 수치를 근거로 사용하세요
+6. 각 단계별 점수도 0~100으로 매겨주세요 (문제 없으면 90~100, 문제 1개면 60~80, 2개 이상이면 40~60, 심각하면 20~40)
+7. 전체 스윙을 종합 평가한 점수(0~100)를 직접 매기세요 (7단계 점수의 평균과 근접하게)
+8. 가장 중요한 교정 드릴 1개를 추천하세요
+9. 측정 수치를 근거로 사용하세요
 
 ⚠️ 반드시 아래 JSON 형식만 출력. JSON 외 텍스트 절대 금지.
 
 {{
   "score": 75,
   "phases": {{
-    "address": {{"status": "good", "problems": []}},
+    "address": {{"score": 80, "status": "good", "problems": []}},
     "takeaway": {{
+      "score": 55,
       "status": "warning",
       "problems": [{{"description": "문제 설명. 교정 방법.", "joints": [13, 15]}}]
     }},
-    "backswing": {{"status": "bad", "problems": [{{"description": "...", "joints": [11]}}]}},
-    "downswing": {{"status": "good", "problems": []}},
-    "impact": {{"status": "good", "problems": []}},
-    "followthrough": {{"status": "good", "problems": []}},
-    "finish": {{"status": "good", "problems": []}}
+    "backswing": {{"score": 40, "status": "bad", "problems": [{{"description": "...", "joints": [11]}}]}},
+    "downswing": {{"score": 85, "status": "good", "problems": []}},
+    "impact": {{"score": 90, "status": "good", "problems": []}},
+    "followthrough": {{"score": 75, "status": "good", "problems": []}},
+    "finish": {{"score": 70, "status": "good", "problems": []}}
   }},
   "drill": {{
     "name": "드릴 이름",
