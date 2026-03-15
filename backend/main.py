@@ -133,22 +133,29 @@ async def analyze(
     log.info("Analyze: club=%s phases=%s",
              club, list(k for k in metrics if k != "swing_indicators"))
 
-    # 1단계: 규칙 엔진 — 스윙 감지 + 프로 기준 비교 데이터 생성
+    # 1단계: 규칙 엔진 — 프로 기준 비교 데이터 생성 (스윙 미감지여도 계속 진행)
     rule_result = analyze_swing(metrics, club=club)
     log.info("Engine: is_swing=%s faults=%d",
              rule_result["is_swing"], len(rule_result.get("faults", [])))
 
-    if not rule_result["is_swing"]:
+    # 스윙 지표로 먼저 판단 — 엔진이 아니라 프론트 MediaPipe 판단 우선
+    swing_ind = metrics.get("swing_indicators", {})
+    has_motion = swing_ind.get("has_swing_motion", False)
+    wrist_range = swing_ind.get("wrist_height_range_pct", 0)
+    is_golf_swing = has_motion and wrist_range >= 8
+
+    if not is_golf_swing:
         coaching = json.dumps(
             {
                 "score": -1,
                 "problems": [],
                 "phase_coaching": {},
                 "drill": {},
-                "reason": rule_result.get("reason", "골프 스윙이 감지되지 않았습니다."),
+                "reason": "골프 스윙이 감지되지 않았습니다. 전신이 보이도록 카메라를 세우고 실제 스윙을 해주세요.",
             },
             ensure_ascii=False,
         )
+        log.info("No swing detected: has_motion=%s wrist_range=%s", has_motion, wrist_range)
         return {"summary": "스윙 미감지", "coaching": coaching}
 
     # 2단계: Gemini — 엔진이 해석한 데이터 + 원시 메트릭을 보고 AI 코칭
