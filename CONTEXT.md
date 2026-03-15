@@ -138,9 +138,11 @@ a5982a7  엔진 복구 — 프로 기준 비교 결과를 Gemini에 전달
 
 ---
 
-## 다음에 할 수 있는 작업들 (미완료)
+## 다음에 할 수 있는 작업들
 
-- [ ] thinking OFF 후 코칭 품질 평가
-- [ ] Gemini 응답에서 단계별 score가 제대로 파싱되는지 확인
-- [ ] Step 10 구간 감지 정확도 개선 (현재 wrist velocity 기반)
-- [ ] 모바일 UX 개선 (폰트, 레이아웃)
+- [ ] thinking OFF 후 코칭 품질 평가 (실제 디바이스 테스트 필요)
+
+### 완료된 작업
+- [x] Gemini 응답에서 단계별 score 파싱 수정 — fallback에 score 추가, avgScore 조건 수정
+- [x] Step 10 구간 감지 정확도 개선 — X-Factor(어깨-힙 회전차) 복합 신호 추가
+- [x] 모바일 UX 개선 — clamp() 반응형 폰트, safe-area 노치 대응, viewport-fit=cover

@@ -132,8 +132,11 @@ def _fallback_error(rule_result: dict | None = None) -> CoachingResult:
             p_faults = sorted(fault_by_phase.get(p, []),
                                key=lambda x: x["deduction"], reverse=True)[:3]
             if p_faults:
+                status = "bad" if len(p_faults) >= 2 else "warning"
+                score = 35 if status == "bad" else 60
                 phase_coaching[p] = {
-                    "status": "bad" if len(p_faults) >= 2 else "warning",
+                    "score": score,
+                    "status": status,
                     "problems": [
                         {
                             "description": f.get("friendly_ko", f["label_ko"]),
@@ -142,6 +145,8 @@ def _fallback_error(rule_result: dict | None = None) -> CoachingResult:
                         for f in p_faults
                     ],
                 }
+            else:
+                phase_coaching[p] = {"score": 85, "status": "good", "problems": []}
 
     engine_score = rule_result.get("score") if rule_result else None
     return CoachingResult(

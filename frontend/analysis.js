@@ -127,14 +127,35 @@ function detectSwingPhases() {
     }
   }
 
+  // X-Factor (어깨-힙 회전차) 스무딩
+  var sXFactor = smoothN(frames, 'xFactor', 5);
+
   var bsTopIdx;
   if (peaks.length > 0) {
+    // 여러 peak 중 X-Factor가 가장 높은 것을 우선 선택
     bsTopIdx = peaks[0];
+    if (peaks.length > 1) {
+      var bestScore = -Infinity;
+      for (var pi = 0; pi < peaks.length; pi++) {
+        var pk = peaks[pi];
+        if (pk > N * 0.75) break; // 너무 늦은 peak 무시
+        // wrist 높이 + X-Factor 복합 점수
+        var wScore = sWrist[pk] / (sWrist[bsTopIdx] || 1);
+        var xScore = sXFactor[pk] / (Math.max.apply(null, sXFactor) || 1);
+        var combined = wScore * 0.6 + xScore * 0.4;
+        if (combined > bestScore) { bestScore = combined; bsTopIdx = pk; }
+      }
+    }
   } else {
+    // peak 없으면: wrist 높이 + X-Factor 복합으로 탐색
     var searchLim = Math.round(N * 0.65);
     bsTopIdx = 0;
+    var bestCombo = -Infinity;
     for (var i = 1; i < searchLim; i++) {
-      if (sWrist[i] > sWrist[bsTopIdx]) bsTopIdx = i;
+      var wNorm = sWrist[i] - baseH;
+      var xNorm = sXFactor[i];
+      var combo = wNorm * 0.6 + (xNorm / 90) * 0.4;
+      if (combo > bestCombo) { bestCombo = combo; bsTopIdx = i; }
     }
   }
 
@@ -202,10 +223,12 @@ function detectSwingPhases() {
   var downStartIdx = bsTopIdx + 1;
   if (bsTopIdx + 2 < impactIdx) {
     var bsHipX = sHipX[bsTopIdx];
+    var bsXF = sXFactor[bsTopIdx];
     for (var i = bsTopIdx + 1; i < impactIdx; i++) {
       var hipShift = Math.abs(sHipX[i] - bsHipX);
       var armChange = sRArm[bsTopIdx] - sRArm[i];
-      if (hipShift > 0.01 || armChange > 8) { downStartIdx = i; break; }
+      var xfDrop = bsXF - sXFactor[i]; // X-Factor 감소 = 다운스윙 시작 신호
+      if (hipShift > 0.01 || armChange > 8 || xfDrop > 5) { downStartIdx = i; break; }
     }
   }
   downStartIdx = Math.min(downStartIdx, N - 1);

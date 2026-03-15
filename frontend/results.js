@@ -57,7 +57,7 @@ function showScoreCard(data) {
 
   // 평균 점수
   var avgScore = coaching.score;
-  if (typeof avgScore !== 'number' || avgScore <= 0) {
+  if (typeof avgScore !== 'number' || avgScore < 0) {
     var sum = 0;
     for (var i = 0; i < phaseScores.length; i++) sum += phaseScores[i];
     avgScore = Math.round(sum / phaseScores.length);
@@ -69,9 +69,9 @@ function showScoreCard(data) {
 
   // 평균 점수 헤더
   html += '<div class="avg-score-header" style="text-align:center;padding:16px 0 8px">';
-  html += '<div style="font-size:13px;color:#888;margin-bottom:4px">종합 점수</div>';
-  html += '<div style="font-size:52px;font-weight:900;color:' + avgColor + ';line-height:1">' + avgScore + '</div>';
-  html += '<div style="font-size:14px;color:#888;margin-top:2px">점 / 100점</div>';
+  html += '<div style="font-size:clamp(11px,3.5vw,13px);color:#888;margin-bottom:4px">종합 점수</div>';
+  html += '<div style="font-size:clamp(36px,12vw,52px);font-weight:900;color:' + avgColor + ';line-height:1">' + avgScore + '</div>';
+  html += '<div style="font-size:clamp(12px,3.5vw,14px);color:#888;margin-top:2px">점 / 100점</div>';
   html += '</div>';
 
   // 7단계 점수 리스트
