@@ -75,7 +75,7 @@ def _call_gemini(prompt_text: str) -> str | None:
         return None
 
 
-def _build_prompt(club: str, notes: str, metrics: dict) -> str:
+def _build_prompt(club: str, notes: str, metrics: dict, rule_result: dict) -> str:
     metrics_txt = ""
     for phase in ["address", "takeaway", "backswing", "downswing",
                    "impact", "followthrough", "finish"]:
@@ -86,17 +86,30 @@ def _build_prompt(club: str, notes: str, metrics: dict) -> str:
     swing_ind = metrics.get("swing_indicators", {})
     swing_txt = json.dumps(swing_ind, ensure_ascii=False) if swing_ind else "없음"
 
+    # 엔진이 프로 기준과 비교해서 발견한 문제들
+    faults = rule_result.get("faults", [])
+    faults_txt = ""
+    for f in faults:
+        faults_txt += (
+            f"  - [{f['phase']}] {f.get('friendly_ko', f['label_ko'])} "
+            f"(감점 {f['deduction']}점)\n"
+        )
+    faults_txt = faults_txt or "  - 엔진 감지 문제 없음\n"
+
     concern = f"\n골퍼의 고민: {notes}" if notes else ""
 
     return f"""당신은 PGA 투어 경력 20년의 프로 골프 코치입니다.
-아래 MediaPipe 센서 데이터를 보고 골프 스윙을 코칭해주세요.
+아래 MediaPipe 센서 데이터와 규칙 엔진 분석 결과를 보고 골프 스윙을 코칭해주세요.
 
 클럽: {club or '미지정'}{concern}
 
-[스윙 전체 지표]
+[스윙 전체 지표 (MediaPipe)]
 {swing_txt}
 
-[7단계별 MediaPipe 측정 데이터]
+[규칙 엔진 — 프로 기준과 비교한 문제점]
+(엔진이 29개 규칙으로 측정값을 프로 기준각과 비교한 결과입니다)
+{faults_txt}
+[7단계별 MediaPipe 원시 측정값]
 (단위: 각도=°, 높이=화면비율 0~100%)
 {metrics_txt}
 [관절 인덱스 참고]
@@ -105,38 +118,24 @@ def _build_prompt(club: str, notes: str, metrics: dict) -> str:
 25=왼무릎, 26=오른무릎, 27=왼발목, 28=오른발목
 
 [지시사항]
-1. 먼저 스윙 지표를 보고 실제 골프 스윙인지 판단하세요.
-   - has_swing_motion이 false이거나 wrist_height_range_pct가 5 미만이면 스윙 아님
-2. 스윙이 맞다면 각 단계별 문제점을 최대 3개 분석하세요
+1. 엔진이 감지한 문제점을 참고하되, 당신의 코치 판단으로 최종 평가하세요
+2. 각 단계별 문제점을 최대 3개 분석하세요
 3. 각 문제에 해당하는 관절 인덱스(joints)를 포함하세요
 4. 문제 설명은 한국어, 초보자도 이해하기 쉽게 (2문장 이내)
 5. 문제가 없는 단계는 problems를 빈 배열로
 6. 전체 스윙을 종합 평가한 점수(0~100)를 직접 매기세요
 7. 가장 중요한 교정 드릴 1개를 추천하세요
-8. 측정 수치를 근거로 사용하세요 (예: "왼무릎 굴곡 152°로 과도하게 펴졌습니다")
+8. 측정 수치를 근거로 사용하세요
 
 ⚠️ 반드시 아래 JSON 형식만 출력. JSON 외 텍스트 절대 금지.
 
-스윙이 아닌 경우:
-{{"is_swing": false, "reason": "이유"}}
-
-스윙인 경우:
 {{
-  "is_swing": true,
   "score": 75,
   "phases": {{
-    "address": {{
-      "status": "good",
-      "problems": []
-    }},
+    "address": {{"status": "good", "problems": []}},
     "takeaway": {{
       "status": "warning",
-      "problems": [
-        {{
-          "description": "문제 설명. 교정 방법.",
-          "joints": [13, 15]
-        }}
-      ]
+      "problems": [{{"description": "문제 설명. 교정 방법.", "joints": [13, 15]}}]
     }},
     "backswing": {{"status": "bad", "problems": [{{"description": "...", "joints": [11]}}]}},
     "downswing": {{"status": "good", "problems": []}},
@@ -150,16 +149,6 @@ def _build_prompt(club: str, notes: str, metrics: dict) -> str:
     "reps": "횟수/시간"
   }}
 }}"""
-
-
-def _fallback_no_swing() -> CoachingResult:
-    phases = ["address", "takeaway", "backswing", "downswing",
-               "impact", "followthrough", "finish"]
-    return CoachingResult(
-        phase_coaching={p: {"status": "good", "problems": []} for p in phases},
-        score=-1,
-        success=False,
-    )
 
 
 def _fallback_error() -> CoachingResult:
@@ -177,10 +166,11 @@ def generate_coaching(
     notes: str = "",
     club: str = "",
     metrics: dict[str, Any] | None = None,
+    rule_result: dict[str, Any] | None = None,
 ) -> CoachingResult:
-    """MediaPipe 메트릭을 Gemini에 보내 AI 코칭을 받습니다."""
+    """엔진 분석 결과 + MediaPipe 메트릭을 Gemini에 보내 AI 코칭을 받습니다."""
 
-    prompt = _build_prompt(club, notes, metrics or {})
+    prompt = _build_prompt(club, notes, metrics or {}, rule_result or {})
     text = _call_gemini(prompt)
 
     if not text:
@@ -193,14 +183,6 @@ def generate_coaching(
 
     try:
         data = json.loads(text)
-
-        if not data.get("is_swing", True):
-            log.info("Gemini: not a golf swing — %s", data.get("reason", ""))
-            return CoachingResult(
-                phase_coaching={},
-                score=-1,
-                success=True,
-            )
 
         phase_coaching = data.get("phases", {})
         drill = data.get("drill", {})

@@ -34,6 +34,7 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from gemini_coach import generate_coaching, CoachingResult
+from rule_engine import analyze_swing
 
 app = FastAPI(title="Golf Swing Coach – NICESHOT")
 
@@ -116,7 +117,7 @@ async def analyze(
     notes: str = Form(default=""),
     club: str = Form(default=""),
 ) -> dict[str, Any]:
-    """MediaPipe 메트릭 → Gemini 코칭 (규칙 엔진 없음)."""
+    """MediaPipe 메트릭 → 엔진 분석 → Gemini 코칭."""
     t0 = time.time()
 
     # 영상은 수신만 하고 버림 (전송하지 않음)
@@ -132,8 +133,27 @@ async def analyze(
     log.info("Analyze: club=%s phases=%s",
              club, list(k for k in metrics if k != "swing_indicators"))
 
+    # 1단계: 규칙 엔진 — 스윙 감지 + 프로 기준 비교 데이터 생성
+    rule_result = analyze_swing(metrics, club=club)
+    log.info("Engine: is_swing=%s faults=%d",
+             rule_result["is_swing"], len(rule_result.get("faults", [])))
+
+    if not rule_result["is_swing"]:
+        coaching = json.dumps(
+            {
+                "score": -1,
+                "problems": [],
+                "phase_coaching": {},
+                "drill": {},
+                "reason": rule_result.get("reason", "골프 스윙이 감지되지 않았습니다."),
+            },
+            ensure_ascii=False,
+        )
+        return {"summary": "스윙 미감지", "coaching": coaching}
+
+    # 2단계: Gemini — 엔진이 해석한 데이터 + 원시 메트릭을 보고 AI 코칭
     try:
-        gemini = generate_coaching(notes=notes, club=club, metrics=metrics)
+        gemini = generate_coaching(notes=notes, club=club, metrics=metrics, rule_result=rule_result)
         log.info("Gemini: success=%s score=%s", gemini.success, gemini.score)
     except Exception as e:
         log.error("Gemini failed: %s", e)
