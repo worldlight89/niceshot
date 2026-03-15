@@ -191,17 +191,20 @@ async def analyze(
             metrics=metrics,
             rule_result=rule_result,
         )
-        log.info("Gemini coaching: success=%s phases_with_problems=%d",
+        log.info("Gemini coaching: success=%s score=%s phases_with_problems=%d",
                  gemini.success,
+                 gemini.score,
                  sum(1 for v in gemini.phase_coaching.values()
                      if v.get("problems")))
     except Exception as e:
         log.error("Gemini failed: %s", e)
         gemini = CoachingResult(phase_coaching={}, success=False)
 
+    final_score = gemini.score if (gemini.success and gemini.score is not None) else rule_result["score"]
+
     coaching = json.dumps(
         {
-            "score": rule_result["score"],
+            "score": final_score,
             "problems": rule_result["problems"],
             "faults": rule_result["faults"],
             "phase_grades": rule_result["phase_grades"],
@@ -213,10 +216,10 @@ async def analyze(
     )
 
     elapsed = time.time() - t0
-    log.info("Analyze complete: score=%d gemini=%s elapsed=%.1fs",
-             rule_result["score"], "AI" if gemini.success else "fallback", elapsed)
+    log.info("Analyze complete: engine_score=%d gemini_score=%s final_score=%d elapsed=%.1fs",
+             rule_result["score"], gemini.score, final_score, elapsed)
 
     return {
-        "summary": f"스윙 점수: {rule_result['score']}/100",
+        "summary": f"스윙 점수: {final_score}/100",
         "coaching": coaching,
     }

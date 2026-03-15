@@ -29,6 +29,7 @@ JOINT_NAMES = {
 class CoachingResult:
     phase_coaching: dict[str, dict] = field(default_factory=dict)
     overall_drill: dict[str, str] = field(default_factory=dict)
+    score: int | None = None
     success: bool = True
 
 
@@ -115,7 +116,7 @@ def _build_coaching_prompt(
 골프 스윙을 코칭해주세요.
 
 클럽: {club or '미지정'}{concern}
-점수: {score}/100
+규칙엔진 기준 점수: {score}/100 (참고용, 최종 점수는 직접 평가하세요)
 
 [규칙 엔진이 감지한 문제점]
 {faults_txt}
@@ -133,10 +134,12 @@ def _build_coaching_prompt(
 4. 문제가 없는 단계는 problems를 빈 배열로 하세요
 5. 전체적으로 가장 중요한 교정 드릴 1개를 추천하세요
 6. 측정 수치를 근거로 활용하세요 (예: "척추각 48°로 프로 기준 35°보다 과도합니다")
+7. 모든 단계를 종합적으로 평가한 최종 점수를 0~100 사이로 직접 매겨주세요
 
 ⚠️ 반드시 아래 JSON 형식만 출력하세요. JSON 외 텍스트 절대 금지.
 
 {{
+  "score": 75,
   "phases": {{
     "address": {{
       "status": "good" 또는 "warning" 또는 "bad",
@@ -228,6 +231,11 @@ def generate_coaching(
         if isinstance(data, dict) and "phases" in data:
             phase_coaching = data["phases"]
             drill = data.get("drill", {})
+            gemini_score = data.get("score")
+            if isinstance(gemini_score, (int, float)):
+                gemini_score = max(0, min(100, int(gemini_score)))
+            else:
+                gemini_score = None
             for p in ["address", "takeaway", "backswing", "downswing",
                        "impact", "followthrough", "finish"]:
                 if p not in phase_coaching:
@@ -242,11 +250,13 @@ def generate_coaching(
                         prob["joints"] = []
                     prob["joints"] = [int(j) for j in prob["joints"] if str(j).isdigit()]
 
-            log.info("Gemini coaching parsed OK: %d phases with problems",
+            log.info("Gemini coaching parsed OK: score=%s phases_with_problems=%d",
+                     gemini_score,
                      sum(1 for v in phase_coaching.values() if v.get("problems")))
             return CoachingResult(
                 phase_coaching=phase_coaching,
                 overall_drill=drill,
+                score=gemini_score,
                 success=True,
             )
     except Exception as e:
