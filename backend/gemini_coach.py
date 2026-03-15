@@ -56,6 +56,7 @@ def _call_gemini(prompt_text: str) -> str | None:
         }
         body = {
             "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
+            "generationConfig": {"thinkingConfig": {"thinkingBudget": 0}},
         }
 
         r = req.post(url, headers=headers, json=body, timeout=60)
