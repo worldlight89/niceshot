@@ -324,7 +324,8 @@ function findClosestPoseFrame(time) {
     var dist = Math.abs(state.poseFrames[i].time - time);
     if (dist < minDist) { minDist = dist; closest = state.poseFrames[i]; }
   }
-  return (closest && minDist < 0.3) ? closest : null;
+  // 매칭 범위 확대: 0.5초 이내면 사용 (어드레스/테이크어웨이 초반 프레임 대응)
+  return (closest && minDist < 0.5) ? closest : null;
 }
 
 function showAnnotation(num, phaseLabel, desc, type) {
@@ -372,6 +373,9 @@ function startSlowmoOverlay() {
       if (t >= stop.time) {
         slowmoPaused = true;
         video.pause();
+        // 정지 시 배지를 stopInfo의 phaseLabel로 강제 설정 (동기화)
+        if (badge) badge.textContent = stop.phaseLabel;
+        if (indicator) indicator.textContent = stop.idx + ' / ' + slowmoPhaseStops.length;
         updatePhaseDots(slowmoPhaseIdx);
         clearAnnotation();
         drawOverlayFrame(ctx, canvas, video, poseFrame, phaseData, stop);
@@ -387,6 +391,213 @@ function startSlowmoOverlay() {
 
   if (slowmoAnimId) cancelAnimationFrame(slowmoAnimId);
   slowmoAnimId = requestAnimationFrame(drawFrame);
+}
+
+/* ── 키워드 → 시각화 매핑 ── */
+var VIS_KEYWORDS = {
+  spine:    ['척추', '기울기', 'spine', '상체', '축'],
+  knee:     ['무릎', 'knee', '굴곡'],
+  shoulder: ['어깨', 'shoulder', '회전차', '숄더턴'],
+  hip:      ['엉덩이', '힙', 'hip', '골반', '하체'],
+  leftArm:  ['왼팔', '왼쪽 팔', '리드암', 'lead arm'],
+  rightArm: ['오른팔', '오른쪽 팔', '트레일암', 'trail arm'],
+  head:     ['머리', '헤드업', '시선', '고개']
+};
+
+function detectVisKeywords(text) {
+  var found = {};
+  for (var key in VIS_KEYWORDS) {
+    var words = VIS_KEYWORDS[key];
+    for (var wi = 0; wi < words.length; wi++) {
+      if (text.indexOf(words[wi]) >= 0) { found[key] = true; break; }
+    }
+  }
+  return found;
+}
+
+/* ── 보조 그리기 함수들 ── */
+
+function drawAngleArc(ctx, ax, ay, bx, by, cx, cy, color, label, w, h) {
+  var ba = { x: ax - bx, y: ay - by };
+  var bc = { x: cx - bx, y: cy - by };
+  var angA = Math.atan2(ba.y, ba.x);
+  var angC = Math.atan2(bc.y, bc.x);
+  var R = Math.max(20, w * 0.04);
+
+  ctx.beginPath();
+  ctx.arc(bx, by, R, angC, angA, angC > angA);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // 각도 라벨
+  var midAng = (angA + angC) / 2;
+  var lx = bx + Math.cos(midAng) * (R + 14);
+  var ly = by + Math.sin(midAng) * (R + 14);
+  var fontSize = Math.max(11, Math.round(w * 0.025));
+  ctx.font = 'bold ' + fontSize + 'px sans-serif';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, lx, ly);
+}
+
+function drawSpineLine(ctx, lms, w, h, color) {
+  var lSho = lms[11], rSho = lms[12], lHip = lms[23], rHip = lms[24];
+  if (!lSho || !rSho || !lHip || !rHip) return;
+  if (lSho.visibility < 0.3 || rSho.visibility < 0.3) return;
+
+  var shoMx = (lSho.x + rSho.x) / 2 * w;
+  var shoMy = (lSho.y + rSho.y) / 2 * h;
+  var hipMx = (lHip.x + rHip.x) / 2 * w;
+  var hipMy = (lHip.y + rHip.y) / 2 * h;
+
+  // 척추선 (점선)
+  ctx.beginPath();
+  ctx.setLineDash([6, 4]);
+  ctx.moveTo(hipMx, hipMy);
+  ctx.lineTo(shoMx, shoMy);
+  ctx.strokeStyle = color || '#00BFFF';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 수직선 (기준)
+  ctx.beginPath();
+  ctx.setLineDash([3, 5]);
+  ctx.moveTo(hipMx, hipMy);
+  ctx.lineTo(hipMx, hipMy - (hipMy - shoMy) * 1.15);
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 각도 계산 및 표시
+  var spineAng = Math.round(Math.atan2(shoMx - hipMx, hipMy - shoMy) * 180 / Math.PI);
+  var fontSize = Math.max(12, Math.round(w * 0.028));
+  var labelX = (shoMx + hipMx) / 2 + 16;
+  var labelY = (shoMy + hipMy) / 2;
+  ctx.font = 'bold ' + fontSize + 'px sans-serif';
+  ctx.fillStyle = color || '#00BFFF';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(spineAng + '°', labelX, labelY);
+}
+
+function drawShoulderHipLines(ctx, lms, w, h, color) {
+  var lSho = lms[11], rSho = lms[12], lHip = lms[23], rHip = lms[24];
+  if (!lSho || !rSho || !lHip || !rHip) return;
+
+  // 어깨 라인
+  ctx.beginPath();
+  ctx.moveTo(lSho.x * w, lSho.y * h);
+  ctx.lineTo(rSho.x * w, rSho.y * h);
+  ctx.strokeStyle = color || '#FFD700';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // 힙 라인
+  ctx.beginPath();
+  ctx.moveTo(lHip.x * w, lHip.y * h);
+  ctx.lineTo(rHip.x * w, rHip.y * h);
+  ctx.strokeStyle = '#FF8C00';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // 회전차 라벨
+  var shoTilt = Math.round(Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) * 180 / Math.PI);
+  var hipTilt = Math.round(Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x) * 180 / Math.PI);
+  var diff = shoTilt - hipTilt;
+  var fontSize = Math.max(11, Math.round(w * 0.025));
+  ctx.font = 'bold ' + fontSize + 'px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  var tx = Math.max(lSho.x, rSho.x) * w + 10;
+  var ty = (lSho.y + rSho.y) / 2 * h;
+  ctx.fillText('어깨 ' + shoTilt + '°', tx, ty);
+  ctx.fillStyle = '#FF8C00';
+  var ty2 = (lHip.y + rHip.y) / 2 * h;
+  ctx.fillText('힙 ' + hipTilt + '°', tx, ty2);
+}
+
+function drawHeadIndicator(ctx, lms, w, h, color) {
+  var nose = lms[0];
+  if (!nose || nose.visibility < 0.3) return;
+  var nx = nose.x * w, ny = nose.y * h;
+  var R = Math.max(14, w * 0.03);
+
+  ctx.beginPath();
+  ctx.setLineDash([4, 3]);
+  ctx.moveTo(nx, ny + R);
+  ctx.lineTo(nx, ny + R + h * 0.08);
+  ctx.strokeStyle = color || '#00BFFF';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.arc(nx, ny, R, 0, Math.PI * 2);
+  ctx.strokeStyle = color || '#00BFFF';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/* ── 컨텍스트 시각화: 코칭 키워드 기반 ── */
+
+function drawContextVisuals(ctx, lms, w, h, issues) {
+  if (!issues || issues.length === 0) return;
+
+  // 모든 이슈 설명에서 키워드 추출
+  var allText = '';
+  for (var i = 0; i < issues.length; i++) {
+    allText += issues[i].description + ' ';
+  }
+  var visTypes = detectVisKeywords(allText);
+
+  var mainColor = issues[0].color || '#00BFFF';
+
+  if (visTypes.spine) {
+    drawSpineLine(ctx, lms, w, h, mainColor);
+  }
+  if (visTypes.shoulder || visTypes.hip) {
+    drawShoulderHipLines(ctx, lms, w, h, mainColor);
+  }
+  if (visTypes.knee) {
+    // 왼무릎 각도 아크
+    if (lms[23] && lms[25] && lms[27] &&
+        lms[23].visibility > 0.3 && lms[25].visibility > 0.3 && lms[27].visibility > 0.3) {
+      var angle = _angleDeg3(lms[23], lms[25], lms[27]);
+      drawAngleArc(ctx, lms[23].x*w, lms[23].y*h, lms[25].x*w, lms[25].y*h,
+                   lms[27].x*w, lms[27].y*h, '#FFD700', angle+'°', w, h);
+    }
+    // 오른무릎 각도 아크
+    if (lms[24] && lms[26] && lms[28] &&
+        lms[24].visibility > 0.3 && lms[26].visibility > 0.3 && lms[28].visibility > 0.3) {
+      var angle2 = _angleDeg3(lms[24], lms[26], lms[28]);
+      drawAngleArc(ctx, lms[24].x*w, lms[24].y*h, lms[26].x*w, lms[26].y*h,
+                   lms[28].x*w, lms[28].y*h, '#FFD700', angle2+'°', w, h);
+    }
+  }
+  if (visTypes.leftArm) {
+    if (lms[11] && lms[13] && lms[15] &&
+        lms[11].visibility > 0.3 && lms[13].visibility > 0.3 && lms[15].visibility > 0.3) {
+      var ang = _angleDeg3(lms[11], lms[13], lms[15]);
+      drawAngleArc(ctx, lms[11].x*w, lms[11].y*h, lms[13].x*w, lms[13].y*h,
+                   lms[15].x*w, lms[15].y*h, mainColor, ang+'°', w, h);
+    }
+  }
+  if (visTypes.rightArm) {
+    if (lms[12] && lms[14] && lms[16] &&
+        lms[12].visibility > 0.3 && lms[14].visibility > 0.3 && lms[16].visibility > 0.3) {
+      var ang = _angleDeg3(lms[12], lms[14], lms[16]);
+      drawAngleArc(ctx, lms[12].x*w, lms[12].y*h, lms[14].x*w, lms[14].y*h,
+                   lms[16].x*w, lms[16].y*h, mainColor, ang+'°', w, h);
+    }
+  }
+  if (visTypes.head) {
+    drawHeadIndicator(ctx, lms, w, h, mainColor);
+  }
 }
 
 function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
@@ -409,6 +620,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var hasHL = false;
   for (var k in jointColorMap) { hasHL = true; break; }
 
+  // 항상 전체 스켈레톤 표시 (stopInfo 여부와 관계없이)
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
     var conn = POSE_CONNECTIONS[ci];
     var a = lms[conn[0]], b = lms[conn[1]];
@@ -423,7 +635,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
     ctx.moveTo(a.x * w, a.y * h);
     ctx.lineTo(b.x * w, b.y * h);
     ctx.lineWidth = lineColor ? Math.max(4, w * 0.008) : Math.max(2, w * 0.005);
-    ctx.strokeStyle = lineColor ? lineColor + 'D9' : 'rgba(255,255,255,0.35)';
+    ctx.strokeStyle = lineColor ? lineColor + 'D9' : 'rgba(255,255,255,0.45)';
     ctx.stroke();
   }
 
@@ -433,10 +645,11 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
     var jColor = jointColorMap[li];
     ctx.beginPath();
     ctx.arc(lm.x * w, lm.y * h, jColor ? DOT_R * 1.6 : DOT_R, 0, Math.PI * 2);
-    ctx.fillStyle = jColor || 'rgba(255,255,255,0.5)';
+    ctx.fillStyle = jColor || 'rgba(255,255,255,0.6)';
     ctx.fill();
   }
 
+  // 하이라이트 원 표시 (문제 관절)
   if (hasHL) {
     for (var ii = 0; ii < issues.length; ii++) {
       var iss = issues[ii];
@@ -457,6 +670,11 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
       ctx.fillStyle = iss.color + '20';
       ctx.fill();
     }
+  }
+
+  // 정지 시: 코칭 키워드에 맞는 시각화 표시
+  if (stopInfo && issues.length > 0) {
+    drawContextVisuals(ctx, lms, w, h, issues);
   }
 
   if (!stopInfo) return;
@@ -501,6 +719,9 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var listY = numCy + numR + 6;
 
   if (isGood) {
+    // 문제 없는 구간에도 기본 시각화 표시 (척추선 + 어깨/힙 라인)
+    drawSpineLine(ctx, lms, w, h, '#27ae60');
+
     ctx.font = 'bold ' + fontSize + 'px sans-serif';
     var goodText = '✓ 좋습니다';
     var gw = ctx.measureText(goodText).width + padding * 2;

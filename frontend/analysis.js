@@ -254,6 +254,25 @@ function detectSwingPhases() {
   ];
 
   var MIN_GAP = 0.08;
+
+  var bTake = Math.max(takeawayStartTime, addressTime + MIN_GAP);
+  var bTakeEnd = Math.max(takeEndTime, bTake + MIN_GAP);
+  var bDown = Math.max(downStartTime, bTakeEnd + MIN_GAP);
+  var bImpS = Math.max(impactTime - 0.03, bDown + MIN_GAP);
+  var bImpE = bImpS + 0.06;
+  var bFinish = Math.max(finishTime, bImpE + MIN_GAP);
+
+  var rangesList = [
+    { key: 'address',       label: '어드레스',    start: 0,       end: bTake },
+    { key: 'takeaway',      label: '테이크어웨이', start: bTake,   end: bTakeEnd },
+    { key: 'backswing',     label: '백스윙',      start: bTakeEnd, end: bDown },
+    { key: 'downswing',     label: '다운스윙',    start: bDown,    end: bImpS },
+    { key: 'impact',        label: '임팩트',      start: bImpS,    end: bImpE },
+    { key: 'followthrough', label: '팔로우스루',  start: bImpE,    end: bFinish },
+    { key: 'finish',        label: '피니시',      start: bFinish,  end: totalTime }
+  ];
+
+  // pauseAt이 반드시 자기 range 안에 위치하도록 클램핑
   for (var p = 0; p < pauseAt.length; p++) {
     pauseAt[p] = Math.max(0.03, Math.min(pauseAt[p], totalTime - 0.03));
   }
@@ -263,27 +282,22 @@ function detectSwingPhases() {
   if (pauseAt[pauseAt.length - 1] > totalTime - 0.03) {
     pauseAt[pauseAt.length - 1] = totalTime - 0.03;
   }
-
-  var bTake = Math.max(takeawayStartTime, addressTime + MIN_GAP);
-  var bTakeEnd = Math.max(takeEndTime, bTake + MIN_GAP);
-  var bDown = Math.max(downStartTime, bTakeEnd + MIN_GAP);
-  var bImpS = Math.max(impactTime - 0.03, bDown + MIN_GAP);
-  var bImpE = bImpS + 0.06;
-  var bFinish = Math.max(finishTime, bImpE + MIN_GAP);
+  // 각 pauseAt을 자기 range의 start/end 안으로 강제 클램핑
+  for (var p = 0; p < pauseAt.length && p < rangesList.length; p++) {
+    var rng = rangesList[p];
+    var margin = 0.01;
+    var lo = rng.start + margin;
+    var hi = rng.end - margin;
+    if (hi <= lo) hi = (rng.start + rng.end) / 2;
+    if (pauseAt[p] < lo) pauseAt[p] = lo;
+    if (pauseAt[p] > hi) pauseAt[p] = hi;
+  }
 
   var result = {
-    ranges: [
-      { key: 'address',       label: '어드레스',    start: 0,       end: bTake },
-      { key: 'takeaway',      label: '테이크어웨이', start: bTake,   end: bTakeEnd },
-      { key: 'backswing',     label: '백스윙',      start: bTakeEnd, end: bDown },
-      { key: 'downswing',     label: '다운스윙',    start: bDown,    end: bImpS },
-      { key: 'impact',        label: '임팩트',      start: bImpS,    end: bImpE },
-      { key: 'followthrough', label: '팔로우스루',  start: bImpE,    end: bFinish },
-      { key: 'finish',        label: '피니시',      start: bFinish,  end: totalTime }
-    ],
+    ranges: rangesList,
     keyTimes: {
-      address: pauseAt[0], takeaway: pauseAt[1], backswing: bsTopTime,
-      downswing: pauseAt[3], impact: impactTime,
+      address: pauseAt[0], takeaway: pauseAt[1], backswing: pauseAt[2],
+      downswing: pauseAt[3], impact: pauseAt[4],
       followthrough: pauseAt[5], finish: pauseAt[6]
     },
     pauseAt: pauseAt
