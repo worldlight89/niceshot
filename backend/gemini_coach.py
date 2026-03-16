@@ -39,6 +39,7 @@ _SCORE_GUIDE = """점수 산정 기준 (문제 개수가 아닌 심각도 기반
 class CoachingResult:
     phase_coaching: dict[str, dict] = field(default_factory=dict)
     overall_drill: dict[str, str] = field(default_factory=dict)
+    feel_coaching: dict[str, Any] = field(default_factory=dict)
     score: int | None = None
     success: bool = True
 
@@ -159,9 +160,12 @@ def _build_prompt(club: str, notes: str, metrics: dict, rule_result: dict) -> st
 2. 드릴: 연습장에서 바로 실행 가능한 1가지, 3문장 이내
 3. 전체 score: 모든 단계 score의 가중평균 (임팩트·다운스윙 가중치 높게)
 4. 사용자 고민이 있으면 관련 단계 코칭에 반드시 언급
+5. feel_coaching: 수치가 아닌 "느낌" 중심의 코칭. 실제 레슨 프로가 옆에서 말해주듯 자연스럽게.
+   - overall_feel: 스윙 전체 흐름/리듬/템포에 대한 총평 (1문장)
+   - points: 2~3개, 무게중심·긴장감·흐름·타이밍 등 체감 중심 조언 (각 1문장, 반말 코칭 톤)
 
 ⚠️ JSON만 출력. 마크다운·설명 텍스트 절대 금지.
-{{"score":75,"phases":{{"address":{{"score":80,"status":"good","problems":[]}},"takeaway":{{"score":55,"status":"warning","problems":[{{"description":"테이크어웨이 시 클럽이 인사이드로 당겨짐. 오른 팔꿈치를 몸에 붙이고 낮고 넓게 뒤로 밀어내세요.","joints":[13,14]}}]}},"backswing":{{"score":40,"status":"bad","problems":[{{"description":"백스윙 탑에서 왼팔이 굽혀짐(각도{'{'}왼팔각도_deg{'}'}: 측정값). 왼팔을 곧게 펴 어깨 회전을 최대화하세요.","joints":[11,13]}}]}},"downswing":{{"score":85,"status":"good","problems":[]}},"impact":{{"score":90,"status":"good","problems":[]}},"followthrough":{{"score":75,"status":"good","problems":[]}},"finish":{{"score":70,"status":"good","problems":[]}}}},"drill":{{"name":"드릴명","method":"방법을 2~3문장으로.","reps":"10회 3세트"}}}}"""
+{{"score":75,"phases":{{"address":{{"score":80,"status":"good","problems":[]}},"takeaway":{{"score":55,"status":"warning","problems":[{{"description":"테이크어웨이 시 클럽이 인사이드로 당겨짐. 오른 팔꿈치를 몸에 붙이고 낮고 넓게 뒤로 밀어내세요.","joints":[13,14]}}]}},"backswing":{{"score":40,"status":"bad","problems":[{{"description":"백스윙 탑에서 왼팔이 굽혀짐. 왼팔을 곧게 펴 어깨 회전을 최대화하세요.","joints":[11,13]}}]}},"downswing":{{"score":85,"status":"good","problems":[]}},"impact":{{"score":90,"status":"good","problems":[]}},"followthrough":{{"score":75,"status":"good","problems":[]}},"finish":{{"score":70,"status":"good","problems":[]}}}},"drill":{{"name":"드릴명","method":"방법을 2~3문장으로.","reps":"10회 3세트"}},"feel_coaching":{{"overall_feel":"스윙이 전체적으로 급하고 상체 위주로 치는 느낌이에요.","points":["어드레스에서 어깨 힘을 빼고, 팔이 자연스럽게 늘어진 상태로 시작해보세요.","다운스윙 시작할 때 하체가 먼저 리드하는 느낌으로, 왼쪽 엉덩이를 타겟 쪽으로 밀어주세요.","피니시에서 왼발에 체중 90%가 실린 채로 3초간 균형을 잡아보세요."]}}}}"""
 
 
 def _fallback_error(rule_result: dict | None = None) -> CoachingResult:
@@ -257,14 +261,23 @@ def generate_coaching(
                     if str(j).lstrip("-").isdigit()
                 ]
 
+        # feel_coaching 파싱
+        feel_coaching = data.get("feel_coaching", {})
+        if not isinstance(feel_coaching, dict):
+            feel_coaching = {}
+        if "points" in feel_coaching and not isinstance(feel_coaching["points"], list):
+            feel_coaching["points"] = []
+
         log.info(
-            "Gemini OK: score=%s phases_with_problems=%d",
+            "Gemini OK: score=%s phases_with_problems=%d feel=%s",
             gemini_score,
             sum(1 for v in phase_coaching.values() if v.get("problems")),
+            bool(feel_coaching.get("overall_feel")),
         )
         return CoachingResult(
             phase_coaching=phase_coaching,
             overall_drill=drill,
+            feel_coaching=feel_coaching,
             score=gemini_score,
             success=True,
         )

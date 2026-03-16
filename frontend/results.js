@@ -95,6 +95,27 @@ function showScoreCard(data) {
   }
   html += '</div>';
 
+  // 코치의 한마디 (feel_coaching)
+  var feel = coaching.feel_coaching;
+  if (feel && (feel.overall_feel || (feel.points && feel.points.length > 0))) {
+    html += '<div class="feel-card">';
+    html += '<div class="feel-title">🗣 코치의 한마디</div>';
+    if (feel.overall_feel) {
+      html += '<div class="feel-overall">' + escapeHtml(feel.overall_feel) + '</div>';
+    }
+    if (feel.points && feel.points.length > 0) {
+      html += '<div class="feel-points">';
+      for (var fi = 0; fi < feel.points.length; fi++) {
+        html += '<div class="feel-point">';
+        html += '<span class="feel-bullet">💬</span>';
+        html += '<span>' + escapeHtml(feel.points[fi]) + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
   if (coaching.drill && (coaching.drill.name || coaching.drill.method)) {
     var d = coaching.drill;
     html += '<div class="drill-card">';

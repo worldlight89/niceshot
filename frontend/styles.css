@@ -553,6 +553,54 @@ html, body {
   font-size: 1rem;
 }
 
+/* 코치의 한마디 */
+.feel-card {
+  background: #fff9f0;
+  border: 1.5px solid #f0d9b5;
+  border-radius: 16px;
+  padding: 18px 20px;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.feel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #d35400;
+  margin-bottom: 10px;
+}
+
+.feel-overall {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0d9b5;
+}
+
+.feel-points {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feel-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: #444;
+  line-height: 1.55;
+}
+
+.feel-bullet {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  margin-top: 1px;
+}
+
 /* 추천 드릴 */
 .drill-card {
   background: #f8faf9;

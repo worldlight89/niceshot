@@ -204,6 +204,7 @@ async def analyze(
             "problems": problems,
             "phase_coaching": gemini.phase_coaching,
             "drill": gemini.overall_drill,
+            "feel_coaching": gemini.feel_coaching,
         },
         ensure_ascii=False,
     )
