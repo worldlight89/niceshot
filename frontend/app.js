@@ -1,8 +1,8 @@
 /* ================================================================
-   NICESHOT – 앱 초기화 및 전체 오케스트레이션
+   NICESHOT – 앱 초기화 및 전체 오케스트레이션 (간소화 버전)
    ================================================================ */
 
-/* ── Step 2: 클럽 선택 ── */
+/* ── Step 2: 클럽 선택 + 고민 (통합) ── */
 
 function buildClubGrid() {
   var grid = document.getElementById('clubGrid');
@@ -22,35 +22,13 @@ function buildClubGrid() {
   });
 }
 
-/* ── Step 4: 고민 입력 ── */
-
-function skipConcern() {
-  var inp = document.getElementById('concernInput');
-  if (inp) inp.value = '';
-  state.concern = '';
-  _updateSummary();
-  goStep(5);
-}
-
-function confirmConcern() {
-  var inp = document.getElementById('concernInput');
-  state.concern = inp ? inp.value.trim() : '';
-  _updateSummary();
-  goStep(5);
-}
-
-function _updateSummary() {
-  var sc = document.getElementById('summaryClub');
-  var sp = document.getElementById('summaryConcern');
-  var cr = document.getElementById('concernRow');
-  if (sc) sc.textContent = state.club || '-';
-  if (sp) sp.textContent = state.concern;
-  if (cr) cr.style.display = state.concern ? '' : 'none';
-}
-
-/* ── Step 6: 연습 시작 ── */
+/* ── 연습 시작 (클럽 선택 → 바로 카메라) ── */
 
 function startPractice() {
+  // 고민 입력 수집
+  var inp = document.getElementById('concernInput');
+  state.concern = inp ? inp.value.trim() : '';
+
   state.videoBlob = null; state.poseFrames = [];
   state.analysisResult = null;
   poseRunning = false; okFrames = 0;
@@ -61,9 +39,15 @@ function startPractice() {
   startVoiceRecognition();
 }
 
-/* ── 한 번 더 연습 ── */
+/* ── 다시 촬영 (클럽 유지, 카메라로 바로) ── */
 
 function practiceAgain() {
+  state.videoBlob = null; state.poseFrames = [];
+  state.analysisResult = null;
+  detectedPhases = null;
+  if (slowmoAnimId) { cancelAnimationFrame(slowmoAnimId); slowmoAnimId = null; }
+  slowmoPaused = false; slowmoPhaseIdx = 0; slowmoPhaseStops = [];
+
   goStep(7);
   betweenState = 'idle';
   poseRunning = false;

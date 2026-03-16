@@ -1,5 +1,5 @@
 /* ================================================================
-   NICESHOT – 결과 화면 (스코어카드 + 슬로모션 교정 영상)
+   NICESHOT – 결과 화면 (핵심 카드 + 상세 + 슬로모션)
    ================================================================ */
 
 function showScoreCard(data) {
@@ -15,10 +15,6 @@ function showScoreCard(data) {
 
   state.analysisResult = coaching;
 
-  console.log('[ScoreCard] coaching:', coaching ? 'OK' : 'null',
-    'score:', coaching && coaching.score,
-    'phase_coaching keys:', coaching && coaching.phase_coaching ? Object.keys(coaching.phase_coaching) : []);
-
   if (!coaching) {
     wrap.innerHTML = '<div class="result-card"><h3>분석 오류</h3><p>' +
       escapeHtml(data.coaching || '다시 시도해주세요.') + '</p></div>';
@@ -29,7 +25,7 @@ function showScoreCard(data) {
     wrap.innerHTML =
       '<div class="score-invalid">' +
       '<div class="invalid-icon">⚠️</div>' +
-      '<h3>골프 스윙이 감지되지 않았습니다</h3>' +
+      '<h3>스윙이 감지되지 않았습니다</h3>' +
       '<p>' + escapeHtml(coaching.reason || '영상에서 골프 스윙 동작을 찾을 수 없습니다.') + '</p>' +
       '<p class="invalid-hint">전신이 보이도록 카메라를 세우고<br>실제 스윙 동작을 해주세요.</p>' +
       '</div>';
@@ -45,7 +41,6 @@ function showScoreCard(data) {
     var key = phaseOrder[i];
     var pc = phaseCoaching[key] || {};
     var ps = typeof pc.score === 'number' ? pc.score : null;
-    // score 없으면 status로 추정
     if (ps === null) {
       if (pc.status === 'good') ps = 85;
       else if (pc.status === 'warning') ps = 60;
@@ -55,7 +50,6 @@ function showScoreCard(data) {
     phaseScores.push(ps);
   }
 
-  // 평균 점수
   var avgScore = coaching.score;
   if (typeof avgScore !== 'number' || avgScore < 0) {
     var sum = 0;
@@ -63,59 +57,101 @@ function showScoreCard(data) {
     avgScore = Math.round(sum / phaseScores.length);
   }
 
+  // 가장 심각한 문제 1~2개 추출
+  var topProblems = [];
+  for (var i = 0; i < phaseOrder.length; i++) {
+    var key = phaseOrder[i];
+    var pc = phaseCoaching[key] || {};
+    if (pc.problems && pc.problems.length > 0) {
+      for (var pi = 0; pi < pc.problems.length; pi++) {
+        topProblems.push({
+          phase: key,
+          phaseLabel: PHASE_LABELS[key] || key,
+          score: phaseScores[i],
+          description: pc.problems[pi].description || ''
+        });
+      }
+    }
+  }
+  topProblems.sort(function(a, b) { return a.score - b.score; });
+  topProblems = topProblems.slice(0, 2);
+
   var avgColor = avgScore >= 80 ? '#2d6a4f' : avgScore >= 60 ? '#f39c12' : '#e74c3c';
 
   var html = '';
 
-  // 평균 점수 헤더
-  html += '<div class="avg-score-header" style="text-align:center;padding:16px 0 8px">';
-  html += '<div style="font-size:clamp(11px,3.5vw,13px);color:#888;margin-bottom:4px">종합 점수</div>';
-  html += '<div style="font-size:clamp(36px,12vw,52px);font-weight:900;color:' + avgColor + ';line-height:1">' + avgScore + '</div>';
-  html += '<div style="font-size:clamp(12px,3.5vw,14px);color:#888;margin-top:2px">점 / 100점</div>';
-  html += '</div>';
+  // ═══ 핵심 카드 ═══
+  html += '<div class="summary-card">';
+
+  // 점수
+  html += '<div class="summary-score" style="color:' + avgColor + '">' + avgScore + '<span class="summary-score-unit">점</span></div>';
+
+  // 핵심 문제
+  if (topProblems.length > 0) {
+    html += '<div class="summary-problems">';
+    for (var i = 0; i < topProblems.length; i++) {
+      var tp = topProblems[i];
+      var probColor = tp.score < 50 ? '#e74c3c' : '#f39c12';
+      html += '<div class="summary-problem">';
+      html += '<div class="summary-problem-phase" style="color:' + probColor + '">' + tp.phaseLabel + '</div>';
+      html += '<div class="summary-problem-desc">' + escapeHtml(tp.description) + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="summary-good">전체적으로 좋은 스윙입니다!</div>';
+  }
+
+  // 코치의 한마디 (feel_coaching) — 핵심 카드에 포함
+  var feel = coaching.feel_coaching;
+  if (feel && feel.overall_feel) {
+    html += '<div class="summary-feel">' + escapeHtml(feel.overall_feel) + '</div>';
+  }
+
+  // 교정 영상 버튼
+  html += '<button class="btn-slowmo" onclick="showSlowmoPlayer()">교정 영상 보기</button>';
+
+  html += '</div>'; // .summary-card
+
+  // ═══ 상세 보기 토글 ═══
+  html += '<button class="detail-toggle" onclick="toggleDetail()" id="detailToggleBtn">상세 분석 보기 ▼</button>';
+
+  html += '<div class="detail-section" id="detailSection" style="display:none">';
 
   // 7단계 점수 리스트
-  html += '<div class="phase-score-list" style="margin:12px 0">';
+  html += '<div class="phase-score-list">';
   for (var i = 0; i < phaseOrder.length; i++) {
     var key = phaseOrder[i];
     var label = PHASE_LABELS[key] || key;
     var ps = phaseScores[i];
     var barColor = ps >= 80 ? '#2d6a4f' : ps >= 60 ? '#f39c12' : '#e74c3c';
-    var barW = ps + '%';
 
-    html += '<div class="phase-score-row" style="margin-bottom:10px">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">';
-    html += '<span style="font-size:13px;font-weight:600;color:#333">' + label + '</span>';
-    html += '<span style="font-size:14px;font-weight:700;color:' + barColor + '">' + ps + '점</span>';
+    html += '<div class="phase-score-row">';
+    html += '<div class="phase-score-header">';
+    html += '<span class="phase-label">' + label + '</span>';
+    html += '<span class="phase-score-val" style="color:' + barColor + '">' + ps + '</span>';
     html += '</div>';
-    html += '<div style="background:#eee;border-radius:4px;height:8px;overflow:hidden">';
-    html += '<div style="width:' + barW + ';background:' + barColor + ';height:100%;border-radius:4px;transition:width 0.8s ease-out"></div>';
-    html += '</div>';
+    html += '<div class="phase-bar-bg"><div class="phase-bar-fill" style="width:' + ps + '%;background:' + barColor + '"></div></div>';
     html += '</div>';
   }
   html += '</div>';
 
-  // 코치의 한마디 (feel_coaching)
-  var feel = coaching.feel_coaching;
-  if (feel && (feel.overall_feel || (feel.points && feel.points.length > 0))) {
+  // feel coaching 상세 포인트
+  if (feel && feel.points && feel.points.length > 0) {
     html += '<div class="feel-card">';
-    html += '<div class="feel-title">🗣 코치의 한마디</div>';
-    if (feel.overall_feel) {
-      html += '<div class="feel-overall">' + escapeHtml(feel.overall_feel) + '</div>';
-    }
-    if (feel.points && feel.points.length > 0) {
-      html += '<div class="feel-points">';
-      for (var fi = 0; fi < feel.points.length; fi++) {
-        html += '<div class="feel-point">';
-        html += '<span class="feel-bullet">💬</span>';
-        html += '<span>' + escapeHtml(feel.points[fi]) + '</span>';
-        html += '</div>';
-      }
+    html += '<div class="feel-title">코치 조언</div>';
+    html += '<div class="feel-points">';
+    for (var fi = 0; fi < feel.points.length; fi++) {
+      html += '<div class="feel-point">';
+      html += '<span class="feel-bullet">💬</span>';
+      html += '<span>' + escapeHtml(feel.points[fi]) + '</span>';
       html += '</div>';
     }
     html += '</div>';
+    html += '</div>';
   }
 
+  // 드릴
   if (coaching.drill && (coaching.drill.name || coaching.drill.method)) {
     var d = coaching.drill;
     html += '<div class="drill-card">';
@@ -125,9 +161,22 @@ function showScoreCard(data) {
     html += '</div>';
   }
 
-  html += '<button class="btn btn-outline" onclick="showSlowmoPlayer()" style="margin-top:12px;width:100%">🎬 교정 영상 보기</button>';
+  html += '</div>'; // .detail-section
 
   wrap.innerHTML = html;
+}
+
+function toggleDetail() {
+  var section = document.getElementById('detailSection');
+  var btn = document.getElementById('detailToggleBtn');
+  if (!section) return;
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    if (btn) btn.textContent = '상세 분석 닫기 ▲';
+  } else {
+    section.style.display = 'none';
+    if (btn) btn.textContent = '상세 분석 보기 ▼';
+  }
 }
 
 /* ================================================================
@@ -146,10 +195,6 @@ function buildPhaseStops() {
   var phaseCoaching = (state.analysisResult && state.analysisResult.phase_coaching) || {};
   var faults = (state.analysisResult && state.analysisResult.faults) || [];
   var hasGemini = Object.keys(phaseCoaching).length > 0;
-
-  console.log('[buildPhaseStops] gemini:', hasGemini,
-    'phases:', Object.keys(phaseCoaching),
-    'faults_fallback:', faults.length);
 
   for (var r = 0; r < ranges.length; r++) {
     var range = ranges[r];
@@ -345,7 +390,6 @@ function findClosestPoseFrame(time) {
     var dist = Math.abs(state.poseFrames[i].time - time);
     if (dist < minDist) { minDist = dist; closest = state.poseFrames[i]; }
   }
-  // 매칭 범위 확대: 0.5초 이내면 사용 (어드레스/테이크어웨이 초반 프레임 대응)
   return (closest && minDist < 0.5) ? closest : null;
 }
 
@@ -353,7 +397,7 @@ function showAnnotation(num, phaseLabel, desc, type) {
   var el = document.getElementById('slowmoAnnotation');
   if (!el) return;
   if (type === 'done') {
-    el.innerHTML = '<div class="annotation-ok">✅ 분석 완료</div>';
+    el.innerHTML = '<div class="annotation-ok">분석 완료</div>';
   } else {
     el.innerHTML = '';
   }
@@ -394,7 +438,6 @@ function startSlowmoOverlay() {
       if (t >= stop.time) {
         slowmoPaused = true;
         video.pause();
-        // 정지 시 배지를 stopInfo의 phaseLabel로 강제 설정 (동기화)
         if (badge) badge.textContent = stop.phaseLabel;
         if (indicator) indicator.textContent = stop.idx + ' / ' + slowmoPhaseStops.length;
         updatePhaseDots(slowmoPhaseIdx);
@@ -414,212 +457,75 @@ function startSlowmoOverlay() {
   slowmoAnimId = requestAnimationFrame(drawFrame);
 }
 
-/* ── 키워드 → 시각화 매핑 ── */
-var VIS_KEYWORDS = {
-  spine:    ['척추', '기울기', 'spine', '상체', '축'],
-  knee:     ['무릎', 'knee', '굴곡'],
-  shoulder: ['어깨', 'shoulder', '회전차', '숄더턴'],
-  hip:      ['엉덩이', '힙', 'hip', '골반', '하체'],
-  leftArm:  ['왼팔', '왼쪽 팔', '리드암', 'lead arm'],
-  rightArm: ['오른팔', '오른쪽 팔', '트레일암', 'trail arm'],
-  head:     ['머리', '헤드업', '시선', '고개']
+/* ── 교정 방향 화살표 ── */
+
+var ARROW_KEYWORDS = {
+  up:    ['펴', '높이', '올려', '들어', '세워'],
+  down:  ['낮춰', '내려', '구부려', '굽혀'],
+  left:  ['왼쪽', '리드', '타겟'],
+  right: ['오른쪽', '뒤로', '밀어'],
+  rotate: ['회전', '돌려', '턴', '열려', '닫아']
 };
 
-function detectVisKeywords(text) {
-  var found = {};
-  for (var key in VIS_KEYWORDS) {
-    var words = VIS_KEYWORDS[key];
-    for (var wi = 0; wi < words.length; wi++) {
-      if (text.indexOf(words[wi]) >= 0) { found[key] = true; break; }
+function detectArrowDir(text) {
+  for (var dir in ARROW_KEYWORDS) {
+    var words = ARROW_KEYWORDS[dir];
+    for (var i = 0; i < words.length; i++) {
+      if (text.indexOf(words[i]) >= 0) return dir;
     }
   }
-  return found;
+  return null;
 }
 
-/* ── 보조 그리기 함수들 ── */
+function drawArrow(ctx, x, y, dir, color, size) {
+  var len = size || 30;
+  var headLen = len * 0.4;
+  var dx = 0, dy = 0;
 
-function drawAngleArc(ctx, ax, ay, bx, by, cx, cy, color, label, w, h) {
-  var ba = { x: ax - bx, y: ay - by };
-  var bc = { x: cx - bx, y: cy - by };
-  var angA = Math.atan2(ba.y, ba.x);
-  var angC = Math.atan2(bc.y, bc.x);
-  var R = Math.max(20, w * 0.04);
+  if (dir === 'up')    { dx = 0; dy = -len; }
+  else if (dir === 'down')  { dx = 0; dy = len; }
+  else if (dir === 'left')  { dx = -len; dy = 0; }
+  else if (dir === 'right') { dx = len; dy = 0; }
+  else if (dir === 'rotate') {
+    // 회전 화살표 (원호)
+    ctx.beginPath();
+    ctx.arc(x, y, len * 0.8, -Math.PI * 0.3, Math.PI * 0.8);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // 화살촉
+    var endX = x + Math.cos(Math.PI * 0.8) * len * 0.8;
+    var endY = y + Math.sin(Math.PI * 0.8) * len * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX + 8, endY - 8);
+    ctx.lineTo(endX - 4, endY - 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    return;
+  }
+
+  var ex = x + dx, ey = y + dy;
 
   ctx.beginPath();
-  ctx.arc(bx, by, R, angC, angA, angC > angA);
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, ey);
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-
-  // 각도 라벨
-  var midAng = (angA + angC) / 2;
-  var lx = bx + Math.cos(midAng) * (R + 14);
-  var ly = by + Math.sin(midAng) * (R + 14);
-  var fontSize = Math.max(11, Math.round(w * 0.025));
-  ctx.font = 'bold ' + fontSize + 'px sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, lx, ly);
-}
-
-function drawSpineLine(ctx, lms, w, h, color) {
-  var lSho = lms[11], rSho = lms[12], lHip = lms[23], rHip = lms[24];
-  if (!lSho || !rSho || !lHip || !rHip) return;
-  if (lSho.visibility < 0.3 || rSho.visibility < 0.3) return;
-
-  var shoMx = (lSho.x + rSho.x) / 2 * w;
-  var shoMy = (lSho.y + rSho.y) / 2 * h;
-  var hipMx = (lHip.x + rHip.x) / 2 * w;
-  var hipMy = (lHip.y + rHip.y) / 2 * h;
-
-  // 척추선 (점선)
-  ctx.beginPath();
-  ctx.setLineDash([6, 4]);
-  ctx.moveTo(hipMx, hipMy);
-  ctx.lineTo(shoMx, shoMy);
-  ctx.strokeStyle = color || '#00BFFF';
   ctx.lineWidth = 3;
   ctx.stroke();
-  ctx.setLineDash([]);
 
-  // 수직선 (기준)
+  // 화살촉
+  var angle = Math.atan2(dy, dx);
   ctx.beginPath();
-  ctx.setLineDash([3, 5]);
-  ctx.moveTo(hipMx, hipMy);
-  ctx.lineTo(hipMx, hipMy - (hipMy - shoMy) * 1.15);
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // 각도 계산 및 표시
-  var spineAng = Math.round(Math.atan2(shoMx - hipMx, hipMy - shoMy) * 180 / Math.PI);
-  var fontSize = Math.max(12, Math.round(w * 0.028));
-  var labelX = (shoMx + hipMx) / 2 + 16;
-  var labelY = (shoMy + hipMy) / 2;
-  ctx.font = 'bold ' + fontSize + 'px sans-serif';
-  ctx.fillStyle = color || '#00BFFF';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(spineAng + '°', labelX, labelY);
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - headLen * Math.cos(angle - 0.4), ey - headLen * Math.sin(angle - 0.4));
+  ctx.lineTo(ex - headLen * Math.cos(angle + 0.4), ey - headLen * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
 }
 
-function drawShoulderHipLines(ctx, lms, w, h, color) {
-  var lSho = lms[11], rSho = lms[12], lHip = lms[23], rHip = lms[24];
-  if (!lSho || !rSho || !lHip || !rHip) return;
-
-  // 어깨 라인
-  ctx.beginPath();
-  ctx.moveTo(lSho.x * w, lSho.y * h);
-  ctx.lineTo(rSho.x * w, rSho.y * h);
-  ctx.strokeStyle = color || '#FFD700';
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-
-  // 힙 라인
-  ctx.beginPath();
-  ctx.moveTo(lHip.x * w, lHip.y * h);
-  ctx.lineTo(rHip.x * w, rHip.y * h);
-  ctx.strokeStyle = '#FF8C00';
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-
-  // 회전차 라벨
-  var shoTilt = Math.round(Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) * 180 / Math.PI);
-  var hipTilt = Math.round(Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x) * 180 / Math.PI);
-  var diff = shoTilt - hipTilt;
-  var fontSize = Math.max(11, Math.round(w * 0.025));
-  ctx.font = 'bold ' + fontSize + 'px sans-serif';
-  ctx.fillStyle = '#FFD700';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  var tx = Math.max(lSho.x, rSho.x) * w + 10;
-  var ty = (lSho.y + rSho.y) / 2 * h;
-  ctx.fillText('어깨 ' + shoTilt + '°', tx, ty);
-  ctx.fillStyle = '#FF8C00';
-  var ty2 = (lHip.y + rHip.y) / 2 * h;
-  ctx.fillText('힙 ' + hipTilt + '°', tx, ty2);
-}
-
-function drawHeadIndicator(ctx, lms, w, h, color) {
-  var nose = lms[0];
-  if (!nose || nose.visibility < 0.3) return;
-  var nx = nose.x * w, ny = nose.y * h;
-  var R = Math.max(14, w * 0.03);
-
-  ctx.beginPath();
-  ctx.setLineDash([4, 3]);
-  ctx.moveTo(nx, ny + R);
-  ctx.lineTo(nx, ny + R + h * 0.08);
-  ctx.strokeStyle = color || '#00BFFF';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.beginPath();
-  ctx.arc(nx, ny, R, 0, Math.PI * 2);
-  ctx.strokeStyle = color || '#00BFFF';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-}
-
-/* ── 컨텍스트 시각화: 코칭 키워드 기반 ── */
-
-function drawContextVisuals(ctx, lms, w, h, issues) {
-  if (!issues || issues.length === 0) return;
-
-  // 모든 이슈 설명에서 키워드 추출
-  var allText = '';
-  for (var i = 0; i < issues.length; i++) {
-    allText += issues[i].description + ' ';
-  }
-  var visTypes = detectVisKeywords(allText);
-
-  var mainColor = issues[0].color || '#00BFFF';
-
-  if (visTypes.spine) {
-    drawSpineLine(ctx, lms, w, h, mainColor);
-  }
-  if (visTypes.shoulder || visTypes.hip) {
-    drawShoulderHipLines(ctx, lms, w, h, mainColor);
-  }
-  if (visTypes.knee) {
-    // 왼무릎 각도 아크
-    if (lms[23] && lms[25] && lms[27] &&
-        lms[23].visibility > 0.3 && lms[25].visibility > 0.3 && lms[27].visibility > 0.3) {
-      var angle = _angleDeg3(lms[23], lms[25], lms[27]);
-      drawAngleArc(ctx, lms[23].x*w, lms[23].y*h, lms[25].x*w, lms[25].y*h,
-                   lms[27].x*w, lms[27].y*h, '#FFD700', angle+'°', w, h);
-    }
-    // 오른무릎 각도 아크
-    if (lms[24] && lms[26] && lms[28] &&
-        lms[24].visibility > 0.3 && lms[26].visibility > 0.3 && lms[28].visibility > 0.3) {
-      var angle2 = _angleDeg3(lms[24], lms[26], lms[28]);
-      drawAngleArc(ctx, lms[24].x*w, lms[24].y*h, lms[26].x*w, lms[26].y*h,
-                   lms[28].x*w, lms[28].y*h, '#FFD700', angle2+'°', w, h);
-    }
-  }
-  if (visTypes.leftArm) {
-    if (lms[11] && lms[13] && lms[15] &&
-        lms[11].visibility > 0.3 && lms[13].visibility > 0.3 && lms[15].visibility > 0.3) {
-      var ang = _angleDeg3(lms[11], lms[13], lms[15]);
-      drawAngleArc(ctx, lms[11].x*w, lms[11].y*h, lms[13].x*w, lms[13].y*h,
-                   lms[15].x*w, lms[15].y*h, mainColor, ang+'°', w, h);
-    }
-  }
-  if (visTypes.rightArm) {
-    if (lms[12] && lms[14] && lms[16] &&
-        lms[12].visibility > 0.3 && lms[14].visibility > 0.3 && lms[16].visibility > 0.3) {
-      var ang = _angleDeg3(lms[12], lms[14], lms[16]);
-      drawAngleArc(ctx, lms[12].x*w, lms[12].y*h, lms[14].x*w, lms[14].y*h,
-                   lms[16].x*w, lms[16].y*h, mainColor, ang+'°', w, h);
-    }
-  }
-  if (visTypes.head) {
-    drawHeadIndicator(ctx, lms, w, h, mainColor);
-  }
-}
+/* ── 오버레이 프레임 그리기 ── */
 
 function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var w = canvas.width, h = canvas.height;
@@ -641,7 +547,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var hasHL = false;
   for (var k in jointColorMap) { hasHL = true; break; }
 
-  // 항상 전체 스켈레톤 표시 (stopInfo 여부와 관계없이)
+  // 스켈레톤 라인
   for (var ci = 0; ci < POSE_CONNECTIONS.length; ci++) {
     var conn = POSE_CONNECTIONS[ci];
     var a = lms[conn[0]], b = lms[conn[1]];
@@ -660,6 +566,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
     ctx.stroke();
   }
 
+  // 관절 점
   for (var li = 0; li < lms.length; li++) {
     var lm = lms[li];
     if (!lm || lm.visibility < 0.25) continue;
@@ -670,7 +577,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
     ctx.fill();
   }
 
-  // 하이라이트 원 표시 (문제 관절)
+  // 문제 관절 하이라이트 + 교정 방향 화살표
   if (hasHL) {
     for (var ii = 0; ii < issues.length; ii++) {
       var iss = issues[ii];
@@ -680,6 +587,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
       var cx = hj.x * w, cy = hj.y * h;
       var R = Math.max(18, w * 0.045);
 
+      // 하이라이트 원
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.strokeStyle = iss.color;
@@ -690,16 +598,19 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.fillStyle = iss.color + '20';
       ctx.fill();
-    }
-  }
 
-  // 정지 시: 코칭 키워드에 맞는 시각화 표시
-  if (stopInfo && issues.length > 0) {
-    drawContextVisuals(ctx, lms, w, h, issues);
+      // 교정 방향 화살표
+      var arrowDir = detectArrowDir(iss.description);
+      if (arrowDir) {
+        var arrowSize = Math.max(25, w * 0.05);
+        drawArrow(ctx, cx, cy - R - 5, arrowDir, iss.color, arrowSize);
+      }
+    }
   }
 
   if (!stopInfo) return;
 
+  // 구간 번호 + 라벨
   var fontSize = Math.max(16, Math.round(w * 0.042));
   var padding = Math.round(fontSize * 0.55);
   var lineH = fontSize * 1.35;
@@ -740,11 +651,8 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
   var listY = numCy + numR + 6;
 
   if (isGood) {
-    // 문제 없는 구간에도 기본 시각화 표시 (척추선 + 어깨/힙 라인)
-    drawSpineLine(ctx, lms, w, h, '#27ae60');
-
     ctx.font = 'bold ' + fontSize + 'px sans-serif';
-    var goodText = '✓ 좋습니다';
+    var goodText = '✓ OK';
     var gw = ctx.measureText(goodText).width + padding * 2;
     var gh = lineH + padding;
     ctx.fillStyle = 'rgba(39,174,96,0.25)';
@@ -757,6 +665,7 @@ function drawOverlayFrame(ctx, canvas, video, poseFrame, phase, stopInfo) {
     return;
   }
 
+  // 문제 카드 (간결한 1줄 형태)
   var maxTextW = w * 0.62;
   ctx.font = fontSize + 'px sans-serif';
   var cardY = listY;

@@ -428,10 +428,10 @@ html, body {
 
 
 /* ================================================================
-   스코어카드 결과 (step 9)
+   결과 화면 (step 9)
    ================================================================ */
 .step-results {
-  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 .scorecard-wrap {
@@ -439,49 +439,192 @@ html, body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 0 20px;
+  gap: 12px;
+  padding: 0 0 12px;
   min-height: 0;
 }
 
-/* 원형 점수 게이지 */
-.score-circle-wrap {
-  position: relative;
-  width: 160px;
-  height: 160px;
-  margin: 8px auto 4px;
-}
-
-.score-svg {
-  width: 100%;
-  height: 100%;
-}
-
-.score-ring {
-  transition: stroke-dashoffset 0s;
-}
-
-.score-number {
-  position: absolute;
-  inset: 0;
+.result-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 3rem;
-  font-weight: 900;
-  color: #1a1a1a;
-  padding-bottom: 12px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.result-actions .btn {
+  flex: 1;
 }
 
-.score-unit {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.85rem;
+/* ── 핵심 카드 ── */
+.summary-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.summary-score {
+  font-size: clamp(48px, 14vw, 64px);
+  font-weight: 900;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.summary-score-unit {
+  font-size: 0.35em;
   font-weight: 600;
-  color: #999;
+  opacity: 0.6;
+  margin-left: 2px;
+}
+
+.summary-problems {
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.summary-problem {
+  background: #fef5f5;
+  border-radius: 12px;
+  padding: 12px 16px;
+  border-left: 4px solid #e74c3c;
+}
+
+.summary-problem-phase {
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.summary-problem-desc {
+  font-size: 0.9rem;
+  color: #333;
+  line-height: 1.5;
+}
+
+.summary-good {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2d6a4f;
+  margin: 16px 0;
+}
+
+.summary-feel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+  font-size: 0.92rem;
+  color: #555;
+  line-height: 1.55;
+  font-style: italic;
+}
+
+.btn-slowmo {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-slowmo:active { opacity: 0.8; }
+
+/* ── 상세 토글 ── */
+.detail-toggle {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 1.5px solid #ddd;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  text-align: center;
+}
+.detail-toggle:active { background: #f5f5f5; }
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── 단계별 점수 바 ── */
+.phase-score-list {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.phase-score-row {
+  margin-bottom: 10px;
+}
+.phase-score-row:last-child {
+  margin-bottom: 0;
+}
+
+.phase-score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.phase-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.phase-score-val {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.phase-bar-bg {
+  background: #eee;
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.phase-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s ease-out;
+}
+
+/* ── 고민 입력 (인라인) ── */
+.concern-inline {
+  padding: 0 0 8px;
+  flex-shrink: 0;
+}
+
+.concern-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1.5px solid #ddd;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  background: #fff;
+  color: #333;
+  font-family: inherit;
+}
+.concern-input:focus {
+  outline: none;
+  border-color: #2d6a4f;
+}
+.concern-input::placeholder {
+  color: #bbb;
 }
 
 /* 교정 포인트 */
