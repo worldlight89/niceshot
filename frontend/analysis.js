@@ -59,15 +59,13 @@ function _angleDeg3(a, b, c) {
   return Math.round(Math.acos(Math.min(1, Math.max(-1, dot / mag))) * 180 / Math.PI);
 }
 
-/* ── 스윙 구간 자동 감지 (velocity 기반 peak/valley) ── */
+/* ── 스윙 구간 자동 감지 (신호 + 비율 제약 하이브리드) ── */
 
 function detectSwingPhases() {
   if (state.poseFrames.length < 10) return null;
 
   var club = state.club || '';
-  var isShort = (club === '웨지' || club === '퍼터' || club === '숏아이언');
   var isPutter = (club === '퍼터');
-  var riseThresh = isPutter ? 0.02 : isShort ? 0.04 : 0.06;
 
   var frames = [];
   for (var i = 0; i < state.poseFrames.length; i++) {
@@ -76,21 +74,22 @@ function detectSwingPhases() {
     var lSho = lms[11], rSho = lms[12];
     var lWri = lms[15], rWri = lms[16];
     var lHip = lms[23], rHip = lms[24];
-    var lElb = lms[13], rElb = lms[14];
     var lWH = 1 - lWri.y, rWH = 1 - rWri.y;
     frames.push({
       time: state.poseFrames[i].time,
       wristH: Math.max(lWH, rWH),
-      shoTilt: Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) * 180 / Math.PI,
-      hipTilt: Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x) * 180 / Math.PI,
       xFactor: Math.abs(Math.atan2(rSho.y - lSho.y, rSho.x - lSho.x) - Math.atan2(rHip.y - lHip.y, rHip.x - lHip.x)) * 180 / Math.PI,
-      rArm: _angleDeg3(rSho, rElb, rWri),
       hipX: (lHip.x + rHip.x) / 2
     });
   }
   if (frames.length < 10) return null;
 
-  function smoothN(arr, key, n) {
+  var N = frames.length;
+  var totalTime = frames[N - 1].time;
+  if (totalTime <= 0) totalTime = 4.0;
+
+  // 스무딩
+  function smooth(arr, key, n) {
     var half = Math.floor(n / 2), out = [];
     for (var i = 0; i < arr.length; i++) {
       var s = Math.max(0, i - half), e = Math.min(arr.length - 1, i + half);
@@ -100,200 +99,90 @@ function detectSwingPhases() {
     }
     return out;
   }
-  var sWrist = smoothN(frames, 'wristH', 7);
-  var sHipX  = smoothN(frames, 'hipX', 5);
-  var sRArm  = smoothN(frames, 'rArm', 5);
-  var N = frames.length;
-  var totalTime = frames[N - 1].time;
-  var baseH = sWrist[0];
+  var sWrist = smooth(frames, 'wristH', 5);
 
-  var vel = [0];
-  for (var i = 1; i < N; i++) vel.push(sWrist[i] - sWrist[i - 1]);
-  var sVel = [];
-  for (var i = 0; i < N; i++) {
-    var vs = Math.max(0, i - 2), ve = Math.min(N - 1, i + 2);
-    var vsum = 0, vcnt = 0;
-    for (var j = vs; j <= ve; j++) { vsum += vel[j]; vcnt++; }
-    sVel.push(vsum / vcnt);
+  // ── 핵심 감지: 백스윙 탑 = wrist 최고점 (전체의 20~60% 구간에서) ──
+  var searchStart = Math.round(N * 0.15);
+  var searchEnd = Math.round(N * 0.60);
+  var bsTopIdx = searchStart;
+  for (var i = searchStart + 1; i < searchEnd; i++) {
+    if (sWrist[i] > sWrist[bsTopIdx]) bsTopIdx = i;
   }
 
-  var peaks = [], valleys = [];
-  for (var i = 2; i < N - 2; i++) {
-    if (sVel[i - 1] > 0.001 && sVel[i + 1] < -0.001 && sWrist[i] > baseH + riseThresh) {
-      peaks.push(i);
-    }
-    if (sVel[i - 1] < -0.001 && sVel[i + 1] > 0.001) {
-      valleys.push(i);
-    }
+  // ── 임팩트 = 백스윙 탑 이후 wrist 최저점 (탑 이후 ~ 85% 구간) ──
+  var impSearchEnd = Math.min(Math.round(N * 0.85), N);
+  var impactIdx = bsTopIdx + 1;
+  if (impactIdx >= N) impactIdx = N - 1;
+  for (var i = bsTopIdx + 1; i < impSearchEnd; i++) {
+    if (sWrist[i] < sWrist[impactIdx]) impactIdx = i;
+  }
+  // 임팩트가 백스윙 탑 바로 뒤면 비율로 보정
+  if (impactIdx <= bsTopIdx + 1) {
+    impactIdx = Math.round(bsTopIdx + (N - bsTopIdx) * 0.35);
+    impactIdx = Math.min(impactIdx, N - 1);
   }
 
-  // X-Factor (어깨-힙 회전차) 스무딩
-  var sXFactor = smoothN(frames, 'xFactor', 5);
-
-  var bsTopIdx;
-  if (peaks.length > 0) {
-    // 여러 peak 중 X-Factor가 가장 높은 것을 우선 선택
-    bsTopIdx = peaks[0];
-    if (peaks.length > 1) {
-      var bestScore = -Infinity;
-      for (var pi = 0; pi < peaks.length; pi++) {
-        var pk = peaks[pi];
-        if (pk > N * 0.75) break; // 너무 늦은 peak 무시
-        // wrist 높이 + X-Factor 복합 점수
-        var wScore = sWrist[pk] / (sWrist[bsTopIdx] || 1);
-        var xScore = sXFactor[pk] / (Math.max.apply(null, sXFactor) || 1);
-        var combined = wScore * 0.6 + xScore * 0.4;
-        if (combined > bestScore) { bestScore = combined; bsTopIdx = pk; }
-      }
-    }
-  } else {
-    // peak 없으면: wrist 높이 + X-Factor 복합으로 탐색
-    var searchLim = Math.round(N * 0.65);
-    bsTopIdx = 0;
-    var bestCombo = -Infinity;
-    for (var i = 1; i < searchLim; i++) {
-      var wNorm = sWrist[i] - baseH;
-      var xNorm = sXFactor[i];
-      var combo = wNorm * 0.6 + (xNorm / 90) * 0.4;
-      if (combo > bestCombo) { bestCombo = combo; bsTopIdx = i; }
-    }
-  }
-
-  if (bsTopIdx > N * 0.75) {
-    var earlyMax = 0;
-    for (var i = 1; i < Math.round(N * 0.6); i++) {
-      if (sWrist[i] > sWrist[earlyMax]) earlyMax = i;
-    }
-    if (sWrist[earlyMax] > baseH + riseThresh * 0.5) bsTopIdx = earlyMax;
-  }
+  // 시간 변환
   var bsTopTime = frames[bsTopIdx].time;
-
-  var impactIdx = -1;
-  for (var i = 0; i < valleys.length; i++) {
-    if (valleys[i] > bsTopIdx) { impactIdx = valleys[i]; break; }
-  }
-  if (impactIdx < 0) {
-    var impSearchEnd = Math.min(bsTopIdx + Math.round(N * 0.3), N);
-    impactIdx = bsTopIdx;
-    for (var i = bsTopIdx + 1; i < impSearchEnd; i++) {
-      if (sWrist[i] < sWrist[impactIdx]) impactIdx = i;
-    }
-  }
-  if (impactIdx <= bsTopIdx) {
-    impactIdx = Math.min(bsTopIdx + Math.round(N * 0.15), N - 1);
-  }
   var impactTime = frames[impactIdx].time;
 
-  var followPeakIdx = impactIdx;
-  for (var i = 0; i < peaks.length; i++) {
-    if (peaks[i] > impactIdx) { followPeakIdx = peaks[i]; break; }
-  }
-  if (followPeakIdx <= impactIdx) {
-    for (var i = impactIdx + 1; i < N; i++) {
-      if (sWrist[i] > sWrist[followPeakIdx]) followPeakIdx = i;
-    }
-  }
-  var followPeakTime = frames[followPeakIdx].time;
-  if (followPeakTime <= impactTime + 0.05) {
-    followPeakTime = impactTime + (totalTime - impactTime) * 0.45;
-  }
+  // ── 비율 기반 구간 배분 (핵심!) ──
+  // 백스윙 탑과 임팩트를 기준점으로 나머지를 비율 배분
+  var addressEnd = bsTopTime * 0.25;           // 어드레스: 0 ~ 탑의 25%
+  var takeEnd = bsTopTime * 0.55;              // 테이크어웨이: ~ 탑의 55%
+  var downStart = bsTopTime + (impactTime - bsTopTime) * 0.15; // 다운스윙 시작: 탑 직후
+  var followEnd = impactTime + (totalTime - impactTime) * 0.55;
+  var finishStart = impactTime + (totalTime - impactTime) * 0.65;
 
-  var addressEndIdx = 0;
-  for (var i = 1; i < bsTopIdx; i++) {
-    if (sWrist[i] > baseH + riseThresh) {
-      addressEndIdx = Math.max(0, i - 1); break;
-    }
-  }
-  var addressTime = frames[0].time;
-
-  var wristRange = sWrist[bsTopIdx] - baseH;
-  var takeRatio = isPutter ? 0.3 : isShort ? 0.35 : 0.4;
-  var takeThresh = baseH + wristRange * takeRatio;
-  var takeEndIdx = addressEndIdx;
-  for (var i = addressEndIdx; i < bsTopIdx; i++) {
-    if (sWrist[i] >= takeThresh) { takeEndIdx = i; break; }
-  }
-  if (takeEndIdx <= addressEndIdx) {
-    takeEndIdx = addressEndIdx + Math.round((bsTopIdx - addressEndIdx) * 0.4);
-  }
-  takeEndIdx = Math.min(takeEndIdx, Math.max(0, bsTopIdx - 1));
-  var takeawayStartTime = frames[Math.max(0, addressEndIdx)].time;
-  var takeEndTime = frames[takeEndIdx].time;
-
-  var downStartIdx = bsTopIdx + 1;
-  if (bsTopIdx + 2 < impactIdx) {
-    var bsHipX = sHipX[bsTopIdx];
-    var bsXF = sXFactor[bsTopIdx];
-    for (var i = bsTopIdx + 1; i < impactIdx; i++) {
-      var hipShift = Math.abs(sHipX[i] - bsHipX);
-      var armChange = sRArm[bsTopIdx] - sRArm[i];
-      var xfDrop = bsXF - sXFactor[i]; // X-Factor 감소 = 다운스윙 시작 신호
-      if (hipShift > 0.01 || armChange > 8 || xfDrop > 5) { downStartIdx = i; break; }
-    }
-  }
-  downStartIdx = Math.min(downStartIdx, N - 1);
-  var downStartTime = frames[downStartIdx].time;
-
-  var finishIdx = followPeakIdx;
-  for (var i = followPeakIdx + 1; i < N; i++) {
-    if (sWrist[i] < sWrist[followPeakIdx] - 0.02) { finishIdx = i; break; }
-  }
-  finishIdx = Math.min(finishIdx, N - 1);
-  var finishTime = frames[finishIdx].time;
-  if (finishTime <= followPeakTime) finishTime = followPeakTime + 0.1;
-  finishTime = Math.min(finishTime, totalTime);
-
-  var pauseAt = [
-    addressTime + 0.05,
-    takeawayStartTime + (takeEndTime - takeawayStartTime) * 0.5,
-    bsTopTime,
-    downStartTime + (impactTime - downStartTime) * 0.4,
-    impactTime,
-    impactTime + (followPeakTime - impactTime) * 0.55,
-    finishTime + (totalTime - finishTime) * 0.35
-  ];
-
-  var MIN_GAP = 0.08;
-
-  var bTake = Math.max(takeawayStartTime, addressTime + MIN_GAP);
-  var bTakeEnd = Math.max(takeEndTime, bTake + MIN_GAP);
-  var bDown = Math.max(downStartTime, bTakeEnd + MIN_GAP);
-  var bImpS = Math.max(impactTime - 0.03, bDown + MIN_GAP);
-  var bImpE = bImpS + 0.06;
-  var bFinish = Math.max(finishTime, bImpE + MIN_GAP);
+  // 최소 간격 보장
+  var MIN = 0.10;
+  if (addressEnd < MIN) addressEnd = MIN;
+  if (takeEnd <= addressEnd + MIN) takeEnd = addressEnd + MIN;
+  if (takeEnd >= bsTopTime - MIN) takeEnd = bsTopTime - MIN;
+  if (downStart <= bsTopTime) downStart = bsTopTime + 0.01;
+  if (downStart >= impactTime - MIN) downStart = impactTime - MIN;
+  if (followEnd <= impactTime + MIN) followEnd = impactTime + MIN;
+  if (finishStart <= followEnd) finishStart = followEnd + MIN;
+  if (finishStart >= totalTime - MIN) finishStart = totalTime - MIN;
 
   var rangesList = [
-    { key: 'address',       label: '어드레스',    start: 0,       end: bTake },
-    { key: 'takeaway',      label: '테이크어웨이', start: bTake,   end: bTakeEnd },
-    { key: 'backswing',     label: '백스윙',      start: bTakeEnd, end: bDown },
-    { key: 'downswing',     label: '다운스윙',    start: bDown,    end: bImpS },
-    { key: 'impact',        label: '임팩트',      start: bImpS,    end: bImpE },
-    { key: 'followthrough', label: '팔로우스루',  start: bImpE,    end: bFinish },
-    { key: 'finish',        label: '피니시',      start: bFinish,  end: totalTime }
+    { key: 'address',       label: '어드레스',    start: 0,           end: addressEnd },
+    { key: 'takeaway',      label: '테이크어웨이', start: addressEnd,  end: takeEnd },
+    { key: 'backswing',     label: '백스윙',      start: takeEnd,      end: bsTopTime },
+    { key: 'downswing',     label: '다운스윙',    start: bsTopTime,    end: impactTime },
+    { key: 'impact',        label: '임팩트',      start: impactTime,   end: impactTime + MIN },
+    { key: 'followthrough', label: '팔로우스루',  start: impactTime + MIN, end: finishStart },
+    { key: 'finish',        label: '피니시',      start: finishStart,  end: totalTime }
   ];
 
-  // pauseAt이 반드시 자기 range 안에 위치하도록 클램핑
+  // pauseAt: 각 구간의 중간점 (backswing=탑, impact=임팩트 시점)
+  var pauseAt = [
+    addressEnd * 0.5,                          // 어드레스 중간
+    (addressEnd + takeEnd) * 0.5,              // 테이크어웨이 중간
+    bsTopTime,                                  // 백스윙 탑 (정확한 지점)
+    (bsTopTime + impactTime) * 0.5,            // 다운스윙 중간
+    impactTime,                                 // 임팩트 (정확한 지점)
+    (impactTime + finishStart) * 0.5,          // 팔로우스루 중간
+    (finishStart + totalTime) * 0.5            // 피니시 중간
+  ];
+
+  // 클램핑
   for (var p = 0; p < pauseAt.length; p++) {
     pauseAt[p] = Math.max(0.03, Math.min(pauseAt[p], totalTime - 0.03));
   }
   for (var p = 1; p < pauseAt.length; p++) {
-    if (pauseAt[p] <= pauseAt[p - 1] + MIN_GAP) pauseAt[p] = pauseAt[p - 1] + MIN_GAP;
-  }
-  if (pauseAt[pauseAt.length - 1] > totalTime - 0.03) {
-    pauseAt[pauseAt.length - 1] = totalTime - 0.03;
-  }
-  // 각 pauseAt을 자기 range의 start/end 안으로 강제 클램핑
-  for (var p = 0; p < pauseAt.length && p < rangesList.length; p++) {
-    var rng = rangesList[p];
-    var margin = 0.01;
-    var lo = rng.start + margin;
-    var hi = rng.end - margin;
-    if (hi <= lo) hi = (rng.start + rng.end) / 2;
-    if (pauseAt[p] < lo) pauseAt[p] = lo;
-    if (pauseAt[p] > hi) pauseAt[p] = hi;
+    if (pauseAt[p] <= pauseAt[p - 1] + 0.05) pauseAt[p] = pauseAt[p - 1] + 0.05;
   }
 
-  var result = {
+  console.log('[Phase Detection] club:', club, 'frames:', N,
+    'bsTop:', bsTopTime.toFixed(2) + 's (' + (bsTopIdx / N * 100).toFixed(0) + '%)',
+    'impact:', impactTime.toFixed(2) + 's (' + (impactIdx / N * 100).toFixed(0) + '%)',
+    'total:', totalTime.toFixed(2) + 's');
+  console.log('[Ranges]', rangesList.map(function(r) {
+    return r.key + ':' + r.start.toFixed(2) + '-' + r.end.toFixed(2);
+  }).join(' | '));
+
+  return {
     ranges: rangesList,
     keyTimes: {
       address: pauseAt[0], takeaway: pauseAt[1], backswing: pauseAt[2],
@@ -302,20 +191,6 @@ function detectSwingPhases() {
     },
     pauseAt: pauseAt
   };
-
-  console.log('[Phase Detection] club:', club,
-    'peaks:', peaks.length, 'valleys:', valleys.length,
-    'bsTopIdx:', bsTopIdx, '(' + (bsTopIdx / N * 100).toFixed(0) + '%)',
-    'impactIdx:', impactIdx, '(' + (impactIdx / N * 100).toFixed(0) + '%)',
-    'followIdx:', followPeakIdx, '(' + (followPeakIdx / N * 100).toFixed(0) + '%)');
-  console.log('[Phase Times]',
-    'addr:', addressTime.toFixed(2), 'take:', bTake.toFixed(2),
-    'bsTop:', bsTopTime.toFixed(2), 'down:', bDown.toFixed(2),
-    'impact:', impactTime.toFixed(2), 'follow:', followPeakTime.toFixed(2),
-    'finish:', finishTime.toFixed(2), 'total:', totalTime.toFixed(2));
-  console.log('[PauseAt]', pauseAt.map(function(t){return t.toFixed(2)}).join(', '));
-
-  return result;
 }
 
 /* ── 저장된 포즈 프레임에서 7개 구간 메트릭 추출 ── */
